@@ -36,6 +36,8 @@ class VehicleState:
         self._version = 0
         self._ack_generation: dict[int, int] = {}
         self._acks: dict[int, dict[str, Any]] = {}
+        self._status_generation = 0
+        self._status_messages: deque[tuple[int, str]] = deque(maxlen=32)
         self._messages: deque[dict[str, Any]] = deque(maxlen=50)
         self._track: deque[dict[str, Any]] = deque(maxlen=600)
         self._home: dict[str, Any] = {
@@ -222,8 +224,11 @@ class VehicleState:
                 self._telemetry["linkQuality"] = round(max(0, min(255, message.rssi)) / 255 * 100)
             elif message_type == "STATUSTEXT":
                 text = message.text.decode(errors="replace") if isinstance(message.text, bytes) else str(message.text)
+                normalized_text = text.rstrip("\x00")
+                self._status_generation += 1
+                self._status_messages.append((self._status_generation, normalized_text))
                 self._messages.appendleft(
-                    {"timestamp": time.time(), "severity": int(message.severity), "text": text.rstrip("\x00")}
+                    {"timestamp": time.time(), "severity": int(message.severity), "text": normalized_text}
                 )
             elif message_type == "MISSION_CURRENT":
                 self._mission["current"] = int(message.seq)
@@ -272,6 +277,25 @@ class VehicleState:
     def ack_generation(self, command: int) -> int:
         with self._condition:
             return self._ack_generation.get(command, 0)
+
+    def status_generation(self) -> int:
+        with self._condition:
+            return self._status_generation
+
+    def status_since(self, after_generation: int) -> str | None:
+        """Return the most recent flight-controller status after a command was sent."""
+        with self._condition:
+            for generation, text in reversed(self._status_messages):
+                if generation > after_generation and text:
+                    return text
+            return None
+
+    def wait_for_status(self, after_generation: int, timeout: float = 0.25) -> str | None:
+        return self.wait_for(lambda: self.status_since(after_generation), timeout)
+
+    def latest_status(self) -> str | None:
+        with self._condition:
+            return self._status_messages[-1][1] if self._status_messages else None
 
     def heartbeat_generation(self) -> int:
         with self._condition:

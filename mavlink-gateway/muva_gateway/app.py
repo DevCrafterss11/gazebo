@@ -100,6 +100,13 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     async def handle_command_error(_request: Request, error: GatewayCommandError) -> JSONResponse:
         return JSONResponse(status_code=error.status_code, content={"detail": str(error)})
 
+    @app.exception_handler(ConnectionError)
+    async def handle_transport_error(_request: Request, error: ConnectionError) -> JSONResponse:
+        # A reconnect race can happen after the heartbeat check but before the
+        # packet is written. Keep that expected condition user-visible as a
+        # retryable gateway error instead of an opaque HTTP 500.
+        return JSONResponse(status_code=503, content={"detail": f"MAVLink transport unavailable: {error}"})
+
     @app.get("/api/health")
     async def health(request: Request) -> dict[str, Any]:
         gateway_instance: Gateway = request.app.state.gateway
@@ -142,6 +149,11 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/commands/takeoff")
     async def takeoff(request: Request, payload: TakeoffRequest) -> dict[str, Any]:
         result = await asyncio.to_thread(request.app.state.gateway.commands.takeoff, payload.altitude)
+        return {"ok": True, "result": result}
+
+    @app.post("/api/commands/hold")
+    async def hold(request: Request) -> dict[str, Any]:
+        result = await asyncio.to_thread(request.app.state.gateway.commands.hold)
         return {"ok": True, "result": result}
 
     @app.get("/api/missions")

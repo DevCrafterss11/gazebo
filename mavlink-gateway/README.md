@@ -57,9 +57,12 @@ Web 前端集成的只读回传控制台使用 UDP 14553。独立终端监控器
 - `POST /api/commands/mode`：切换模式并等待心跳确认
 - `POST /api/commands/arm`：解锁/锁定并等待 ACK 与状态确认
 - `POST /api/commands/takeoff`：GUIDED 模式起飞命令
+- `POST /api/commands/hold`：GUIDED 位置/高度保持（不依赖遥控器油门）
 - `GET /api/missions`：从飞控下载任务
 - `POST /api/missions/upload`：上传任务并回读校验
 - `POST /api/missions/start`：切换 AUTO 并启动任务
+
+地面解锁时，网关会自动将 `AUTO`、`LAND`、`RTL` 和 `SMART_RTL` 切换到 `GUIDED` 后再发送解锁命令；飞行中不会绕过安全检查。飞控拒绝解锁时，错误会包含同一时段的 `STATUSTEXT` 预检原因。
 
 ## 测试
 

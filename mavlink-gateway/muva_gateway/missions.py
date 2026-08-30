@@ -3,12 +3,14 @@ from __future__ import annotations
 import math
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from typing import Any, TYPE_CHECKING
 
 from pymavlink import mavutil
 
-from .commands import CommandRejectedError, CommandTimeoutError, InvalidCommandError, VehicleOfflineError
+from .commands import CommandRejectedError, CommandTimeoutError, InvalidCommandError, OperationBusyError, VehicleOfflineError
 from .config import Settings
 from .state import VehicleState
 from .transport import MavlinkTransport
@@ -65,6 +67,15 @@ class MissionService:
         self._operation_lock = operation_lock
         self._last_verified: list[MissionItem] | None = None
         self._last_uploaded_at = 0.0
+
+    @contextmanager
+    def _operation(self) -> Iterator[None]:
+        if not self._operation_lock.acquire(blocking=False):
+            raise OperationBusyError("Another flight operation is already in progress")
+        try:
+            yield
+        finally:
+            self._operation_lock.release()
 
     def build_items(self, items: list[dict[str, Any]]) -> list[MissionItem]:
         if not 2 <= len(items) <= 200:
@@ -129,7 +140,7 @@ class MissionService:
 
     def upload(self, raw_items: list[dict[str, Any]], verify: bool = True) -> dict[str, Any]:
         items = self.build_items(raw_items)
-        with self._operation_lock:
+        with self._operation():
             self._ensure_ready_for_upload()
             self._last_verified = None
             target_system, target_component = self.state.target
@@ -195,7 +206,7 @@ class MissionService:
             }
 
     def download(self) -> dict[str, Any]:
-        with self._operation_lock:
+        with self._operation():
             self._ensure_online()
             items = self._download_locked()
             public_items = self._public_items(items)
@@ -208,7 +219,7 @@ class MissionService:
         last upload, so execution must always operate on the flight controller's
         current mission rather than a stale browser copy.
         """
-        with self._operation_lock:
+        with self._operation():
             self._ensure_online()
             actual = self._download_locked()
             self._validate_downloaded(actual)

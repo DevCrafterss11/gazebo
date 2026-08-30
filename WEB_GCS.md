@@ -15,7 +15,7 @@ MUVA_MAVLINK_ENDPOINT=tcp:127.0.0.1:5762 ./mavlink-gateway/dev.sh
 
 网关 API 文档位于 `http://localhost:8000/docs`。
 
-地面解锁时，如果飞控当前处于 `AUTO`，网关会先切换到 `GUIDED` 再发送解锁命令；飞行中不会自动切换模式或绕过安全检查。
+地面解锁时，如果飞控当前处于 `AUTO`、`LAND`、`RTL` 或 `SMART_RTL`，网关会先切换到 `GUIDED` 再发送解锁命令；飞行中不会自动切换模式或绕过安全检查。飞控拒绝解锁时，API 会把同一时段的 `STATUSTEXT` 预检原因附加到错误中，便于用户直接处理 GPS、EKF、安全开关等问题。
 
 ## 飞控终端监控
 

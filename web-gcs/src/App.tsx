@@ -194,11 +194,13 @@ function ArtificialHorizon({ roll, pitch, heading }: { roll: number; pitch: numb
 function Sparkline({ values }: { values: number[] }) {
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const range = max - min || 1;
+  // Keep small telemetry jitter from rendering as alternating full-height bars.
+  const range = Math.max(max - min, 5);
+  const scaleMin = (min + max) / 2 - range / 2;
   return (
     <div className="sparkline" aria-hidden="true">
       {values.map((value, index) => (
-        <span key={index} style={{ height: `${18 + ((value - min) / range) * 74}%` }} />
+        <span key={index} style={{ height: `${18 + Math.max(0, Math.min(1, (value - scaleMin) / range)) * 74}%` }} />
       ))}
     </div>
   );
@@ -909,6 +911,8 @@ export default function App() {
   const [armed, setArmed] = useState(gateway.vehicle.armed);
   const [showConfirm, setShowConfirm] = useState(false);
   const [commandState, setCommandState] = useState<CommandState>("idle");
+  const commandInFlightRef = useRef(false);
+  const commandResetTimerRef = useRef<number | null>(null);
   const [toast, setToast] = useState("正在连接 MAVLink 网关");
   const [mission, setMission] = useState(initialMission);
   const [missionSync, setMissionSync] = useState<MissionSyncState>("unknown");
@@ -920,6 +924,8 @@ export default function App() {
   const [defaultAltitude, setDefaultAltitude] = useState(25);
   const [cruiseSpeed, setCruiseSpeed] = useState(7);
   const [altitudeHistory, setAltitudeHistory] = useState<number[]>(() => Array(16).fill(telemetry.altitude));
+  const latestAltitudeRef = useRef(telemetry.altitude);
+  latestAltitudeRef.current = telemetry.altitude;
   const missionBusy = !demoMode && (gateway.mission.state === "starting" || gateway.mission.state === "active");
 
   const currentPosition: [number, number] = [telemetry.longitude, telemetry.latitude];
@@ -936,8 +942,11 @@ export default function App() {
     if (gateway.home.valid) setPlanHome([gateway.home.longitude, gateway.home.latitude]);
   }, [gateway.home.valid, gateway.home.longitude, gateway.home.latitude]);
   useEffect(() => {
-    setAltitudeHistory((current) => [...current.slice(-15), telemetry.altitude]);
-  }, [telemetry.altitude]);
+    const timer = window.setInterval(() => {
+      setAltitudeHistory((current) => [...current.slice(-15), latestAltitudeRef.current]);
+    }, 3750);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     setToast(gateway.connection.connected ? "MAVLink 飞控链路已连接" : "等待飞控心跳");
   }, [gateway.connection.connected]);
@@ -947,6 +956,14 @@ export default function App() {
     request?: () => Promise<unknown>,
     callback?: (response: unknown) => void,
   ) => {
+    // React state updates are asynchronous; a ref closes the same-tick
+    // double-click window before `commandState` becomes pending.
+    if (commandInFlightRef.current) return;
+    commandInFlightRef.current = true;
+    if (commandResetTimerRef.current !== null) {
+      window.clearTimeout(commandResetTimerRef.current);
+      commandResetTimerRef.current = null;
+    }
     setCommandState("pending");
     setToast(`${message} · 等待飞控确认`);
     try {
@@ -959,11 +976,13 @@ export default function App() {
       callback?.(response);
       setCommandState("success");
       setToast(`${message} · 飞控已接受`);
-      window.setTimeout(() => setCommandState("idle"), 1200);
+      commandResetTimerRef.current = window.setTimeout(() => setCommandState("idle"), 1200);
     } catch (error) {
       setCommandState("error");
       setToast(`${message} · ${error instanceof Error ? error.message : "命令失败"}`);
-      window.setTimeout(() => setCommandState("idle"), 3500);
+      commandResetTimerRef.current = window.setTimeout(() => setCommandState("idle"), 3500);
+    } finally {
+      commandInFlightRef.current = false;
     }
   };
 
@@ -989,7 +1008,10 @@ export default function App() {
     if (action === "takeoff") {
       void execute(`起飞至 ${value}m`, () => sendGatewayCommand("/api/commands/takeoff", { altitude: value }));
     } else if (action === "hold") {
-      void changeMode("LOITER", "切换悬停");
+      void execute("悬停", () => sendGatewayCommand("/api/commands/hold", {}), (response) => {
+        const payload = response as { result?: { mode?: string } } | undefined;
+        if (payload?.result?.mode) setMode(payload.result.mode);
+      });
     } else if (action === "rtl") {
       void changeMode("RTL", "执行返航");
     } else if (action === "land") {
