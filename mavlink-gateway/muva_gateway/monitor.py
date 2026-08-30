@@ -152,6 +152,31 @@ class MonitorConsoleState:
             })
             self._version += 1
 
+    def record_local_event(
+        self,
+        message_type: str,
+        category: str,
+        severity: str,
+        text: str,
+        source_system: int = 0,
+        source_component: int = 0,
+    ) -> None:
+        """Record a gateway command response while the read-only stream catches up."""
+        now = time.time()
+        with self._lock:
+            self._entry_id += 1
+            self._entries.append({
+                "id": self._entry_id,
+                "timestamp": now,
+                "type": message_type,
+                "category": category,
+                "severity": severity,
+                "text": text,
+                "sourceSystem": source_system,
+                "sourceComponent": source_component,
+            })
+            self._version += 1
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             heartbeat_age = time.monotonic() - self._last_heartbeat if self._last_heartbeat else None

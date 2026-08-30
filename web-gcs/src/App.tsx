@@ -978,7 +978,11 @@ export default function App() {
     void execute(
       armed ? "锁定" : "解锁",
       () => sendGatewayCommand("/api/commands/arm", { arm: nextArmed }),
-      () => setArmed(nextArmed),
+      (response) => {
+        const payload = response as { result?: { mode?: string } } | undefined;
+        if (payload?.result?.mode) setMode(payload.result.mode);
+        setArmed(nextArmed);
+      },
     );
   };
   const handleFlightCommand = (action: FlightAction, value?: number) => {

@@ -15,6 +15,8 @@ MUVA_MAVLINK_ENDPOINT=tcp:127.0.0.1:5762 ./mavlink-gateway/dev.sh
 
 网关 API 文档位于 `http://localhost:8000/docs`。
 
+地面解锁时，如果飞控当前处于 `AUTO`，网关会先切换到 `GUIDED` 再发送解锁命令；飞行中不会自动切换模式或绕过安全检查。
+
 ## 飞控终端监控
 
 Web 页面中的飞控回传控制台由网关只读监听 UDP 14553，不会通过该端口发送控制命令。

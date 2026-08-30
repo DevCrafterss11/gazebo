@@ -306,20 +306,15 @@ class MissionService:
             item.param3,
             item.param4,
         )
-        if request_type == "MISSION_REQUEST_INT":
-            connection.mav.mission_item_int_send(
-                *common,
-                int(round(item.latitude * 1e7)),
-                int(round(item.longitude * 1e7)),
-                item.altitude,
-            )
-        else:
-            connection.mav.mission_item_send(
-                *common,
-                item.latitude,
-                item.longitude,
-                item.altitude,
-            )
+        # Use the integer mission protocol for both request variants. ArduPilot
+        # accepts MISSION_ITEM_INT for legacy MISSION_REQUEST messages and avoids
+        # the "GCS should send MISSION_ITEM_INT" warning.
+        connection.mav.mission_item_int_send(
+            *common,
+            int(round(item.latitude * 1e7)),
+            int(round(item.longitude * 1e7)),
+            item.altitude,
+        )
 
     @staticmethod
     def _from_message(message: Any) -> MissionItem:

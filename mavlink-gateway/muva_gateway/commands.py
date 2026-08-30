@@ -83,6 +83,15 @@ class CommandService:
     def arm(self, arm: bool) -> dict[str, Any]:
         with self._command_lock:
             self._ensure_online()
+            mode_changed = False
+            # ArduCopter refuses a ground arm request while still in AUTO.
+            # Switch to a manual/assisted mode first; never do this airborne.
+            if arm and self.state.vehicle_value("mode") == "AUTO":
+                altitude = float(self.state.telemetry_value("altitude") or 0.0)
+                if altitude > 1.0:
+                    raise CommandRejectedError("Cannot arm in AUTO while airborne; land before arming")
+                self.set_mode("GUIDED")
+                mode_changed = True
             if not arm and self.state.vehicle_value("armed") and not self.settings.allow_in_flight_disarm:
                 altitude = float(self.state.telemetry_value("altitude") or 0.0)
                 if altitude > 1.0:
@@ -112,7 +121,7 @@ class CommandService:
             )
             if not changed:
                 raise CommandTimeoutError("Armed state did not change after command acknowledgement")
-            return {"accepted": True, "armed": arm, "ack": ack}
+            return {"accepted": True, "armed": arm, "modeChanged": mode_changed, "mode": self.state.vehicle_value("mode"), "ack": ack}
 
     def takeoff(self, altitude: float) -> dict[str, Any]:
         if not 2 <= altitude <= 120:

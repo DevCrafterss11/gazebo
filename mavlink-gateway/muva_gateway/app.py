@@ -122,7 +122,16 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
 
     @app.post("/api/commands/mode")
     async def set_mode(request: Request, payload: ModeRequest) -> dict[str, Any]:
-        result = await asyncio.to_thread(request.app.state.gateway.commands.set_mode, payload.mode)
+        gateway_instance: Gateway = request.app.state.gateway
+        result = await asyncio.to_thread(gateway_instance.commands.set_mode, payload.mode)
+        gateway_instance.monitor.state.record_local_event(
+            "MODE_CHANGE",
+            "command",
+            "info",
+            f"mode={result['mode']} -> ACCEPTED",
+            source_system=gateway_instance.state.target[0],
+            source_component=gateway_instance.state.target[1],
+        )
         return {"ok": True, "result": result}
 
     @app.post("/api/commands/arm")

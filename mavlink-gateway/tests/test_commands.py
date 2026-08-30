@@ -65,3 +65,16 @@ def test_arm_requires_ack_and_armed_heartbeat() -> None:
     assert result["armed"] is True
     assert result["ack"]["resultName"] == "ACCEPTED"
     assert state.vehicle_value("armed") is True
+
+
+def test_arm_from_ground_auto_switches_to_guided() -> None:
+    state = connected_state()
+    state.handle_message(heartbeat(custom_mode=3, armed=False))  # AUTO
+    service = CommandService(Settings(command_timeout=0.2), state, FakeTransport(state))
+
+    result = service.arm(True)
+
+    assert result["accepted"] is True
+    assert result["modeChanged"] is True
+    assert result["mode"] == "GUIDED"
+    assert state.vehicle_value("armed") is True
