@@ -1,0 +1,62 @@
+.page {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.86fr) minmax(620px, 2.35fr) minmax(260px, 0.92fr);
+  grid-template-rows: minmax(0, 1fr) clamp(92px, 10vh, 108px);
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.leftColumn,
+.centerColumn,
+.rightColumn {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+.leftColumn {
+  grid-template-rows: minmax(300px, 1.55fr) minmax(190px, 0.8fr);
+}
+
+.centerColumn {
+  grid-template-rows: minmax(310px, 1fr) clamp(176px, 21vh, 202px);
+}
+
+.rightColumn {
+  grid-template-rows: minmax(210px, 0.78fr) minmax(240px, 1.08fr);
+}
+
+.telemetryRow {
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.leftColumn > *,
+.centerColumn > *,
+.rightColumn > *,
+.telemetryRow > * {
+  min-height: 0;
+}
+
+@media (max-height: 900px) {
+  .page {
+    grid-template-columns: minmax(230px, 0.8fr) minmax(580px, 2.45fr) minmax(248px, 0.86fr);
+    grid-template-rows: minmax(0, 1fr) 92px;
+    gap: var(--space-2);
+  }
+  .leftColumn,
+  .centerColumn,
+  .rightColumn { gap: var(--space-2); }
+  .leftColumn { grid-template-rows: minmax(270px, 1.5fr) minmax(150px, 0.72fr); }
+  .centerColumn { grid-template-rows: minmax(250px, 1fr) 180px; }
+  .rightColumn { grid-template-rows: minmax(185px, 0.76fr) minmax(215px, 1fr); }
+}
+
+@media (max-width: 1720px) {
+  .page {
+    grid-template-columns: minmax(225px, 0.78fr) minmax(560px, 2.5fr) minmax(245px, 0.84fr);
+  }
+}

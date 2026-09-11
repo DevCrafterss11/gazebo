@@ -1,0 +1,60 @@
+:root {
+  --color-bg-app: #020d1c;
+  --color-bg-panel: #05213d;
+  --color-bg-panel-secondary: #082c4f;
+  --color-bg-panel-elevated: #0a3155;
+
+  --color-primary: #08a9ff;
+  --color-primary-hover: #35c4ff;
+  --color-primary-deep: #0867f2;
+  --color-primary-soft: rgb(8 169 255 / 14%);
+
+  --color-success: #3ee7b1;
+  --color-warning: #ffc13d;
+  --color-danger: #ff5f75;
+
+  --color-text-primary: #edf8ff;
+  --color-text-secondary: #a9c8e4;
+  --color-text-muted: #6287a8;
+
+  --color-border: #12669e;
+  --color-border-active: #0bb8ff;
+  --color-divider: rgb(34 122 183 / 38%);
+
+  --shadow-panel: inset 0 0 24px rgb(0 144 235 / 10%);
+  --shadow-panel-active: 0 0 10px rgb(0 183 255 / 38%), inset 0 0 20px rgb(0 142 255 / 16%);
+  --shadow-header: 0 1px 0 #0baeff, 0 4px 18px rgb(0 142 255 / 20%);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --type-caption: 11px;
+  --type-body: 13px;
+  --type-panel-title: 15px;
+  --type-metric: 20px;
+  --type-page-title: 26px;
+
+  --font-family-base: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-md: 15px;
+  --font-size-lg: 18px;
+  --font-size-xl: 28px;
+
+  --top-header-height: 64px;
+  --sidebar-width: 252px;
+}

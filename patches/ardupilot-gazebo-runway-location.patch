@@ -1,0 +1,18 @@
+diff --git a/worlds/iris_runway.sdf b/worlds/iris_runway.sdf
+index 259ac71..5a04003 100755
+--- a/worlds/iris_runway.sdf
++++ b/worlds/iris_runway.sdf
+@@ -34,9 +34,9 @@
+     </scene>
+ 
+     <spherical_coordinates>
+-      <latitude_deg>-35.363262</latitude_deg>
+-      <longitude_deg>149.165237</longitude_deg>
+-      <elevation>584</elevation>
++      <latitude_deg>34.341600</latitude_deg>
++      <longitude_deg>108.939800</longitude_deg>
++      <elevation>405</elevation>
+       <heading_deg>0</heading_deg>
+       <surface_model>EARTH_WGS84</surface_model>
+     </spherical_coordinates>
+

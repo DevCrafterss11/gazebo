@@ -1,0 +1,6 @@
+.venv/
+.packages/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.tlog

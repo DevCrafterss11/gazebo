@@ -1,0 +1,236 @@
+.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 51% 42%, rgb(31 116 145 / 24%), transparent 34%),
+    linear-gradient(154deg, transparent 0 35%, rgb(12 76 89 / 30%) 36% 46%, transparent 47%),
+    linear-gradient(25deg, transparent 0 48%, rgb(18 91 106 / 24%) 49% 54%, transparent 55%),
+    linear-gradient(180deg, #0a354b 0%, #0b2a3d 55%, #0e343a 100%);
+}
+
+.viewport::before {
+  position: absolute;
+  inset: -25% -10% -12%;
+  background-image:
+    linear-gradient(rgb(56 148 178 / 13%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(56 148 178 / 13%) 1px, transparent 1px);
+  background-size: 44px 44px;
+  content: "";
+  transform: perspective(420px) rotateX(52deg) scale(1.25);
+}
+
+.viewport::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgb(2 13 28 / 28%), transparent 18% 82%, rgb(2 13 28 / 34%));
+  content: "";
+}
+
+.sceneBlocks {
+  position: absolute;
+  inset: 0;
+  opacity: 0.65;
+}
+
+.sceneBlocks span {
+  position: absolute;
+  width: 74px;
+  height: 40px;
+  border: 1px solid rgb(64 156 178 / 36%);
+  background: linear-gradient(145deg, #174858, #0d2937);
+  box-shadow: 8px 8px 0 rgb(3 18 28 / 28%);
+  transform: skewY(-16deg);
+}
+
+.sceneBlocks span:nth-child(1) { top: 22%; left: 8%; }
+.sceneBlocks span:nth-child(2) { top: 61%; left: 16%; width: 102px; }
+.sceneBlocks span:nth-child(3) { top: 18%; right: 12%; width: 118px; }
+.sceneBlocks span:nth-child(4) { right: 22%; bottom: 12%; width: 88px; }
+.sceneBlocks span:nth-child(5) { top: 46%; left: 39%; width: 56px; height: 31px; }
+.sceneBlocks span:nth-child(6) { top: 52%; right: 4%; width: 62px; height: 32px; }
+
+.taskBanner {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border: 1px solid var(--color-primary);
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: rgb(3 28 51 / 87%);
+  box-shadow: 0 0 12px rgb(0 174 255 / 26%);
+  font-size: 11px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.taskBanner svg,
+.taskBanner strong {
+  color: #4ecbff;
+}
+
+.taskBanner small {
+  padding-left: 8px;
+  border-left: 1px solid var(--color-divider);
+  color: var(--color-text-muted);
+}
+
+.compass {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: #bfeaff;
+  text-shadow: 0 0 7px var(--color-primary);
+}
+
+.compass strong {
+  font-size: 11px;
+}
+
+.route {
+  position: absolute;
+  z-index: 2;
+  inset: 27% 19% 24% 17%;
+  border: 2px dashed var(--color-warning);
+  border-right-color: transparent;
+  border-radius: 50%;
+  filter: drop-shadow(0 0 4px rgb(255 193 61 / 28%));
+  transform: rotate(-8deg);
+}
+
+.startPoint,
+.taskPoint,
+.taskPointOne,
+.taskPointThree {
+  position: absolute;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 2px solid #e6fbff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.startPoint {
+  bottom: -4px;
+  left: -8px;
+  color: var(--color-success);
+  background: #08785c;
+}
+
+.taskPointOne {
+  top: -8px;
+  left: 28%;
+  color: var(--color-warning);
+  background: #c17c00;
+}
+
+.taskPoint {
+  top: -12px;
+  right: 6%;
+  color: #80d9ff;
+  background: var(--color-primary-deep);
+}
+
+.taskPointThree {
+  right: 12%;
+  bottom: -7px;
+  color: #d097ff;
+  background: #8228d7;
+}
+
+.droneMarker {
+  position: absolute;
+  top: 48%;
+  left: 55%;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgb(91 221 255 / 45%);
+  border-radius: 50%;
+  background: rgb(5 55 84 / 58%);
+  box-shadow: 0 0 16px rgb(0 194 255 / 42%);
+  transition: left 180ms linear, top 180ms linear;
+}
+
+.flightPath { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.flightPath polyline { fill: none; stroke: #5be0ff; stroke-width: 0.7; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px #0bb8ff); }
+
+.rotorHorizontal,
+.rotorVertical,
+.droneCore {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  background: #bdeeff;
+  transform: translate(-50%, -50%);
+}
+
+.rotorHorizontal { width: 38px; height: 4px; }
+.rotorVertical { width: 4px; height: 38px; }
+.droneCore { width: 13px; height: 13px; border-radius: 50%; background: #27c6ff; }
+
+.telemetryHud {
+  position: absolute;
+  z-index: 4;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgb(2 19 35 / 82%);
+}
+
+.telemetryHud > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 76px;
+  padding: 6px 9px;
+  border-right: 1px solid var(--color-divider);
+}
+
+.telemetryHud > div:last-child { border-right: 0; }
+.telemetryHud span { color: var(--color-text-muted); font-size: 8px; }
+.telemetryHud strong { color: #76d8ff; font-size: 11px; }
+
+.viewLabel {
+  position: absolute;
+  z-index: 4;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: #4ecbff;
+  background: rgb(2 19 35 / 82%);
+}
+
+.viewLabel div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viewLabel strong { color: var(--color-text-primary); font-size: 10px; }
+.viewLabel span { color: var(--color-text-muted); font-size: 8px; }

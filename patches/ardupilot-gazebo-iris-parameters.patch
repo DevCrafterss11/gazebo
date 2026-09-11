@@ -1,0 +1,14 @@
+diff --git a/Tools/autotest/default_params/gazebo-iris.parm b/Tools/autotest/default_params/gazebo-iris.parm
+index 7fba567f3f..9f1ef40d01 100644
+--- a/Tools/autotest/default_params/gazebo-iris.parm
++++ b/Tools/autotest/default_params/gazebo-iris.parm
+@@ -10,4 +10,7 @@ SIM_SONAR_SCALE 10
+ RNGFND1_TYPE 1
+ RNGFND1_SCALING 10
+ RNGFND1_PIN 0
+-RNGFND1_MAX 50.00
++# The Gazebo Iris world has no calibrated downward rangefinder. Its synthetic
++# reading can be above the vehicle's takeoff altitude; keep it out of the
++# terrain-following range so ArduPilot uses the EKF/home altitude for takeoff.
++RNGFND1_MAX 10.00
+

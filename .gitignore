@@ -1,0 +1,39 @@
+# Local tools and caches
+.tools/
+.pytest_cache/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+
+# Third-party source trees are restored from the pinned revisions in README.
+/ardupilot/
+/ardupilot_gazebo/
+
+# Frontend generated dependencies and output
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Python environments and downloaded packages
+**/.venv/
+**/.packages/
+
+# Runtime data, logs, and simulator artifacts
+/backups/
+/mavlink-gateway/data/
+**/logs/
+*.tlog
+*.tlog.raw
+eeprom.bin
+
+# The experimental frontend copy is intentionally kept local for now.
+/gazebo/gazebo-design/
+
+# Editor and operating-system files
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
