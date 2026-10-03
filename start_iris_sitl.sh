@@ -12,7 +12,7 @@ exec Tools/autotest/sim_vehicle.py \
     --model JSON \
     --add-param-file="${defaults_dir}/copter.parm" \
     --add-param-file="${defaults_dir}/gazebo-iris.parm" \
-    --custom-location=34.341600,108.939800,405,0 \
+    --custom-location=34.125159,108.828965,412,0 \
     --out=127.0.0.1:14552 \
     --out=127.0.0.1:14553 \
     -N \

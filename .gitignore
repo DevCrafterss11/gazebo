@@ -13,6 +13,10 @@
 **/node_modules/
 **/dist/
 **/.vite/
+**/.env.local
+
+# Locally downloaded system packages
+*.deb
 
 # Python environments and downloaded packages
 **/.venv/
@@ -36,4 +40,3 @@ eeprom.bin
 .idea/
 *.swp
 *~
-

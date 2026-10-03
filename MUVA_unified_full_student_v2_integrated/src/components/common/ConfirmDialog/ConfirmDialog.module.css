@@ -1,0 +1,36 @@
+.content {
+  display: grid;
+  gap: 14px;
+  color: #ffbd78;
+  text-align: center;
+  justify-items: center;
+}
+
+.content p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.actions button {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid #1986bd;
+  border-radius: 6px;
+  color: #dff6ff;
+  background: #0a3d63;
+}
+
+.actions .confirm {
+  border-color: #a75945;
+  color: #ffc2aa;
+  background: rgb(115 43 30 / 34%);
+}

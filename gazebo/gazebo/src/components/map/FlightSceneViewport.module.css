@@ -11,6 +11,283 @@
     linear-gradient(180deg, #0a354b 0%, #0b2a3d 55%, #0e343a 100%);
 }
 
+.mapCanvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background:
+    linear-gradient(rgb(64 163 191 / 13%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(64 163 191 / 13%) 1px, transparent 1px),
+    #0a2b37;
+  background-size: 36px 36px;
+}
+
+.mapCanvas :global(.maplibregl-canvas) {
+  outline: none;
+}
+
+.mapCanvas :global(.maplibregl-ctrl-attrib) {
+  color: #355867;
+  background: rgb(235 244 246 / 78%);
+  font-size: 9px;
+}
+
+.mapCanvas :global(.maplibregl-ctrl-attrib-button) {
+  width: 22px;
+  height: 22px;
+}
+
+.mapControls {
+  position: absolute;
+  z-index: 5;
+  top: 51px;
+  right: 12px;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgb(102 190 211 / 38%);
+  border-radius: 4px;
+  background: rgb(2 24 36 / 86%);
+  box-shadow: 0 6px 18px rgb(0 8 16 / 28%);
+}
+
+.mapControls button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #c8f2ff;
+  border: 0;
+  border-bottom: 1px solid rgb(102 190 211 / 22%);
+  background: transparent;
+  cursor: pointer;
+  place-items: center;
+}
+
+.mapControls button:last-child { border-bottom: 0; }
+.mapControls button:hover { color: #fff; background: rgb(40 160 198 / 32%); }
+
+.vehicleMapMarker {
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgb(120 230 255 / 70%);
+  border-radius: 50%;
+  background: rgb(4 50 72 / 75%);
+  box-shadow: 0 0 0 3px rgb(10 166 211 / 16%), 0 0 16px rgb(0 188 244 / 72%);
+}
+
+.vehicleMapMarker::before {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 22px;
+  height: 27px;
+  background: #ffe174;
+  clip-path: polygon(50% 0, 66% 44%, 96% 72%, 62% 68%, 50% 100%, 38% 68%, 4% 72%, 34% 44%);
+  content: "";
+  filter: drop-shadow(0 0 3px rgb(255 225 116 / 82%));
+  transform: translateX(-50%);
+}
+
+.vehicleMapMarker::after {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  width: 2px;
+  height: 20px;
+  background: linear-gradient(#ffe174, #60ddff);
+  box-shadow: 0 0 5px rgb(255 225 116 / 70%);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.vehicleMapMarker[data-landed="true"] {
+  border-color: #fff3a5;
+  background: rgb(4 50 72 / 92%);
+  box-shadow: 0 0 0 5px rgb(255 225 116 / 22%), 0 0 22px rgb(255 225 116 / 88%);
+  animation: landed-pulse 1.8s ease-in-out infinite;
+}
+
+.vehicleMapMarker[data-landed="true"]::before {
+  background: #fff07b;
+  filter: drop-shadow(0 0 6px rgb(255 240 123 / 100%));
+}
+
+.homeMapMarker[data-occupied="true"] {
+  opacity: 0.34;
+  transform: scale(1.45);
+}
+
+@keyframes landed-pulse {
+  50% { box-shadow: 0 0 0 8px rgb(255 225 116 / 8%), 0 0 28px rgb(255 225 116 / 100%); }
+}
+
+.homeMapMarker {
+  z-index: 1;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  color: #e8fff7;
+  border: 2px solid #d7fff2;
+  border-radius: 50%;
+  background: #08785c;
+  box-shadow: 0 0 0 3px rgb(8 120 92 / 24%), 0 0 12px rgb(21 213 157 / 64%);
+  font-size: 11px;
+  font-weight: 900;
+  place-items: center;
+}
+
+.routeWaypointMarker {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #fff3bd;
+  border-radius: 50%;
+  color: #102334;
+  background: #ffd257;
+  box-shadow: 0 0 0 3px rgb(255 210 87 / 22%), 0 3px 10px rgb(1 13 22 / 55%);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  place-items: center;
+}
+
+.mapCanvas :global(.maplibregl-marker) {
+  pointer-events: none;
+}
+
+.routePlannerToolbar {
+  position: absolute;
+  z-index: 7;
+  top: 51px;
+  right: 52px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 43px;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid rgb(255 210 87 / 62%);
+  border-radius: 5px;
+  background: rgb(3 28 45 / 94%);
+  box-shadow: 0 7px 18px rgb(0 10 18 / 36%), inset 3px 0 0 #ffd257;
+}
+
+.routePlannerIdentity {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 118px;
+  color: #ffd257;
+}
+
+.routePlannerIdentity > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.routePlannerIdentity strong { color: #f5fbff; font-size: 11px; white-space: nowrap; }
+.routePlannerIdentity small { color: #9db8c7; font-size: 8px; white-space: nowrap; }
+
+.routeAltitude {
+  display: grid;
+  grid-template-columns: auto 42px auto;
+  align-items: center;
+  gap: 4px;
+  color: #9ebdce;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.routeAltitude input {
+  width: 42px;
+  height: 27px;
+  padding: 0 4px;
+  border: 1px solid #27617f;
+  border-radius: 3px;
+  outline: none;
+  color: #e8f8ff;
+  background: #061f34;
+  font-size: 10px;
+  text-align: center;
+}
+
+.routeAltitude input:focus { border-color: #5cd8ff; }
+.routeAltitude i { color: #7398ad; font-style: normal; }
+
+.routePlannerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.routePlannerActions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #285b77;
+  border-radius: 3px;
+  color: #baddeb;
+  background: #08283d;
+}
+
+.routePlannerActions button:hover:not(:disabled) { border-color: #65d8ff; color: #fff; background: #0b4664; }
+.routePlannerActions button:disabled { opacity: 0.4; }
+
+.routePlannerActions .executeRouteButton {
+  width: auto;
+  min-width: 86px;
+  padding: 0 10px;
+  border-color: #ffd257;
+  color: #13222c;
+  background: #ffd257;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.routePlannerActions .executeRouteButton:hover:not(:disabled) { color: #07131d; background: #ffe68d; }
+.routePlannerActions .executeRouteButton:disabled { border-color: #6b7680; color: #aeb9bf; background: #26343d; }
+
+.routePlannerError,
+.routePlannerHint {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 25px;
+  padding: 4px 8px;
+  border: 1px solid rgb(227 91 95 / 52%);
+  border-radius: 4px;
+  color: #ffc4c6;
+  background: rgb(72 20 31 / 92%);
+  box-shadow: 0 5px 13px rgb(0 8 16 / 28%);
+  font-size: 9px;
+}
+
+.routePlannerHint {
+  border-color: rgb(75 195 230 / 48%);
+  color: #bdefff;
+  background: rgb(4 43 63 / 90%);
+}
+
+.routeSpinner { animation: route-spin 1s linear infinite; }
+
+@keyframes route-spin {
+  to { transform: rotate(360deg); }
+}
+
 .viewport::before {
   position: absolute;
   inset: -25% -10% -12%;
@@ -100,76 +377,193 @@
   font-size: 11px;
 }
 
-.route {
+.mapLayer {
   position: absolute;
   z-index: 2;
-  inset: 27% 19% 24% 17%;
-  border: 2px dashed var(--color-warning);
-  border-right-color: transparent;
-  border-radius: 50%;
-  filter: drop-shadow(0 0 4px rgb(255 193 61 / 28%));
-  transform: rotate(-8deg);
+  inset: 19% 8% 22%;
+  border: 1px solid rgb(90 182 205 / 26%);
+  background:
+    linear-gradient(rgb(64 163 191 / 15%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(64 163 191 / 15%) 1px, transparent 1px),
+    rgb(3 29 42 / 16%);
+  background-size: 12.5% 12.5%;
+  box-shadow: inset 0 0 28px rgb(2 16 28 / 24%);
 }
 
-.startPoint,
-.taskPoint,
-.taskPointOne,
-.taskPointThree {
+.mapLayer::before,
+.mapLayer::after {
   position: absolute;
-  display: grid;
-  width: 31px;
-  height: 31px;
-  place-items: center;
-  border: 2px solid #e6fbff;
-  border-radius: 50%;
-  font-size: 12px;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.mapLayer::before {
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 1px solid rgb(122 211 231 / 28%);
+}
+
+.mapLayer::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px solid rgb(122 211 231 / 28%);
+}
+
+.cardinalNorth,
+.cardinalEast,
+.cardinalSouth,
+.cardinalWest {
+  position: absolute;
+  z-index: 1;
+  color: rgb(185 233 245 / 68%);
+  font-size: 9px;
   font-weight: 800;
-  box-shadow: 0 0 12px currentColor;
+  line-height: 1;
 }
 
-.startPoint {
-  bottom: -4px;
-  left: -8px;
-  color: var(--color-success);
+.cardinalNorth { top: 5px; left: 50%; transform: translateX(-50%); }
+.cardinalEast { top: 50%; right: 6px; transform: translateY(-50%); }
+.cardinalSouth { bottom: 5px; left: 50%; transform: translateX(-50%); }
+.cardinalWest { top: 50%; left: 6px; transform: translateY(-50%); }
+
+.homePoint {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  color: #b5ffe8;
   background: #08785c;
-}
-
-.taskPointOne {
-  top: -8px;
-  left: 28%;
-  color: var(--color-warning);
-  background: #c17c00;
-}
-
-.taskPoint {
-  top: -12px;
-  right: 6%;
-  color: #80d9ff;
-  background: var(--color-primary-deep);
-}
-
-.taskPointThree {
-  right: 12%;
-  bottom: -7px;
-  color: #d097ff;
-  background: #8228d7;
+  border: 1px solid #d6fff3;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgb(21 213 157 / 52%);
+  place-items: center;
+  transform: translate(-50%, -50%);
 }
 
 .droneMarker {
   position: absolute;
-  top: 48%;
-  left: 55%;
-  width: 54px;
-  height: 54px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgb(91 221 255 / 45%);
   border-radius: 50%;
   background: rgb(5 55 84 / 58%);
   box-shadow: 0 0 16px rgb(0 194 255 / 42%);
-  transition: left 180ms linear, top 180ms linear;
+  transform-origin: center;
+  transition: left 180ms linear, top 180ms linear, transform 180ms linear;
 }
 
-.flightPath { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.flightPath polyline { fill: none; stroke: #5be0ff; stroke-width: 0.7; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px #0bb8ff); }
+.flightPath {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.flightPath polyline {
+  fill: none;
+  stroke: #5be0ff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px #0bb8ff);
+}
+
+.flightPath .flightPathShadow {
+  stroke: rgb(0 11 22 / 72%);
+  stroke-width: 5;
+  filter: none;
+}
+
+.plannedRoutePath {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.plannedRoutePath polyline {
+  fill: none;
+  stroke: #ffe066;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 4px rgb(255 224 102 / 90%));
+}
+
+.plannedRoutePath .plannedRoutePathShadow {
+  stroke: rgb(4 19 29 / 92%);
+  stroke-width: 8;
+  filter: none;
+}
+
+.plannedRouteOverlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.plannedRouteOverlay polyline {
+  fill: none;
+  stroke: #fff08a;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px rgb(255 224 102 / 100%));
+}
+
+.plannedRouteOverlay .plannedRouteOverlayShadow {
+  stroke: rgb(4 19 29 / 94%);
+  stroke-width: 3.8;
+  filter: none;
+}
+
+.headingVector {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(#ffe174, #54d9ff);
+  box-shadow: 0 0 5px rgb(255 219 91 / 66%);
+  transform: translateX(-50%);
+}
+
+.droneNose {
+  position: absolute;
+  z-index: 3;
+  top: -10px;
+  left: 50%;
+  color: #ffe174;
+  filter: drop-shadow(0 0 4px rgb(255 211 69 / 70%));
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.scaleLabel {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  z-index: 3;
+  color: rgb(190 226 236 / 72%);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
 
 .rotorHorizontal,
 .rotorVertical,
@@ -182,9 +576,9 @@
   transform: translate(-50%, -50%);
 }
 
-.rotorHorizontal { width: 38px; height: 4px; }
-.rotorVertical { width: 4px; height: 38px; }
-.droneCore { width: 13px; height: 13px; border-radius: 50%; background: #27c6ff; }
+.rotorHorizontal { width: 31px; height: 3px; }
+.rotorVertical { width: 3px; height: 31px; }
+.droneCore { width: 11px; height: 11px; border-radius: 50%; background: #27c6ff; }
 
 .telemetryHud {
   position: absolute;

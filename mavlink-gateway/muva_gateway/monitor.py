@@ -27,7 +27,11 @@ MISSION_TYPES = {
     "MISSION_ACK",
     "MISSION_COUNT",
     "MISSION_CURRENT",
+    "MISSION_ITEM",
+    "MISSION_ITEM_INT",
     "MISSION_ITEM_REACHED",
+    "MISSION_REQUEST",
+    "MISSION_REQUEST_INT",
 }
 
 IMPORTANT_TYPES = MISSION_TYPES | {"STATUSTEXT", "COMMAND_ACK", "HEARTBEAT"}
@@ -51,7 +55,11 @@ FIELD_ORDER = {
     "MISSION_ACK": ("type", "mission_type"),
     "MISSION_COUNT": ("count", "mission_type"),
     "MISSION_CURRENT": ("seq", "total", "mission_state", "mission_mode"),
+    "MISSION_ITEM": ("seq", "command", "frame", "x", "y", "z"),
+    "MISSION_ITEM_INT": ("seq", "command", "frame", "x", "y", "z"),
     "MISSION_ITEM_REACHED": ("seq",),
+    "MISSION_REQUEST": ("seq", "mission_type"),
+    "MISSION_REQUEST_INT": ("seq", "mission_type"),
 }
 
 
@@ -146,6 +154,7 @@ class MonitorConsoleState:
                 "type": message_type,
                 "category": category,
                 "severity": severity,
+                "direction": "RX",
                 "text": text,
                 "sourceSystem": int(message.get_srcSystem()),
                 "sourceComponent": int(message.get_srcComponent()),
@@ -160,6 +169,7 @@ class MonitorConsoleState:
         text: str,
         source_system: int = 0,
         source_component: int = 0,
+        direction: str = "LOCAL",
     ) -> None:
         """Record a gateway command response while the read-only stream catches up."""
         now = time.time()
@@ -171,6 +181,7 @@ class MonitorConsoleState:
                 "type": message_type,
                 "category": category,
                 "severity": severity,
+                "direction": direction,
                 "text": text,
                 "sourceSystem": source_system,
                 "sourceComponent": source_component,
@@ -245,6 +256,19 @@ class MonitorConsoleState:
             return "info", "heartbeat", f"mode={mode} armed={str(armed).lower()} state={status}"
 
         if message_type in MISSION_TYPES:
+            if message_type in ("MISSION_ITEM", "MISSION_ITEM_INT"):
+                command = int(getattr(message, "command", 0))
+                command_name = _enum_name("MAV_CMD", command, str(command)).removeprefix("MAV_CMD_")
+                latitude_raw = float(getattr(message, "x", 0))
+                longitude_raw = float(getattr(message, "y", 0))
+                latitude = latitude_raw / 1e7 if message_type == "MISSION_ITEM_INT" else latitude_raw
+                longitude = longitude_raw / 1e7 if message_type == "MISSION_ITEM_INT" else longitude_raw
+                return "info", "mission", (
+                    f"item seq={int(getattr(message, 'seq', 0))} command={command_name} ({command}) "
+                    f"lat={latitude:.7f} lon={longitude:.7f} alt={float(getattr(message, 'z', 0)):.1f}m"
+                )
+            if message_type in ("MISSION_REQUEST", "MISSION_REQUEST_INT"):
+                return "info", "mission", f"request item seq={int(getattr(message, 'seq', 0))}"
             if message_type == "MISSION_ITEM_REACHED":
                 return "info", "mission", f"reached waypoint {int(getattr(message, 'seq', 0))}"
             if message_type == "MISSION_CURRENT":

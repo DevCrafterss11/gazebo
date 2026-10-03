@@ -117,7 +117,7 @@ done
 [[ -x "${project_dir}/start_iris_gazebo.sh" ]] || fail "找不到 Gazebo 启动脚本"
 [[ -x "${project_dir}/start_iris_sitl.sh" ]] || fail "找不到 SITL 启动脚本"
 [[ -x "${project_dir}/mavlink-gateway/dev.sh" ]] || fail "找不到 MAVLink 网关启动脚本"
-[[ -x "${project_dir}/start_teaching_frontend.sh" ]] || fail "找不到教学前端启动脚本"
+[[ -x "${project_dir}/start_unified_frontend.sh" ]] || fail "找不到统一平台前端启动脚本"
 
 for port in 8000 5173; do
     port_in_use "${port}" && fail "TCP 端口 ${port} 已被占用，请先关闭占用它的程序"
@@ -158,7 +158,7 @@ for _ in $(seq 1 100); do
 done
 ((gateway_ready == 1)) || fail "MAVLink 网关未能在 20 秒内就绪"
 
-start_service "MUVA 教学平台" "teaching-frontend.log" "${project_dir}/start_teaching_frontend.sh" --host 127.0.0.1
+start_service "MUVA 统一教学平台" "teaching-frontend.log" "${project_dir}/start_unified_frontend.sh" --host 127.0.0.1 --port 5173
 
 log "等待 MUVA 教学平台..."
 web_ready=0

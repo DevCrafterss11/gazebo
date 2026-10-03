@@ -1,0 +1,195 @@
+.surface {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(250px, 1.35fr) minmax(190px, 0.92fr) minmax(210px, 1fr);
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.directionGroup,
+.axisGroup,
+.commandGroup {
+  position: relative;
+  min-width: 0;
+  padding: 22px var(--space-2) var(--space-2);
+  border: 1px solid rgb(22 83 123 / 52%);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgb(7 40 71 / 68%), rgb(3 23 43 / 58%));
+}
+
+.groupLabel {
+  position: absolute;
+  top: 5px;
+  left: 9px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.directionPad {
+  display: grid;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  gap: var(--space-1);
+  height: 100%;
+}
+
+.directionPad button,
+.axisControls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 0;
+  border: 1px solid #185f8c;
+  border-radius: var(--radius-sm);
+  color: #c9eaff;
+  background: linear-gradient(180deg, #0a385d, #072943);
+  font-size: 11px;
+  box-shadow: inset 0 0 8px rgb(42 176 255 / 8%);
+}
+
+.directionPad button svg,
+.axisControls button svg {
+  color: #4fc9ff;
+}
+
+.forward { grid-area: 1 / 2; }
+.left { grid-area: 2 / 1; }
+.hold { grid-area: 2 / 2; }
+.right { grid-area: 2 / 3; }
+.backward { grid-area: 3 / 2; }
+
+.directionPad .hold {
+  border-color: var(--color-primary);
+  color: #fff;
+  background: linear-gradient(180deg, #087fd0, #075494);
+  box-shadow: 0 0 9px rgb(0 177 255 / 26%), inset 0 0 10px rgb(165 235 255 / 16%);
+}
+
+.axisControls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  height: 100%;
+}
+
+.commandGroup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.commandGroup button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  background: transparent;
+  font-weight: 700;
+}
+
+.commandGroup button > span {
+  font-size: 12px;
+}
+
+.commandGroup button small {
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+.armButton {
+  border-color: #12bc8a !important;
+  color: #65f4c7 !important;
+  background: rgb(8 109 81 / 24%) !important;
+}
+
+.landButton {
+  border-color: #c95763 !important;
+  color: #ff9ca7 !important;
+  background: rgb(137 36 48 / 25%) !important;
+}
+
+.disarmButton {
+  border-color: #536f86 !important;
+  color: #b3c9d8 !important;
+  background: rgb(55 75 91 / 22%) !important;
+}
+
+.takeoffButton {
+  border-color: #25b8ff !important;
+  color: #fff !important;
+  background: linear-gradient(180deg, #078bd7, #0761ad) !important;
+  box-shadow: 0 0 9px rgb(0 174 255 / 25%);
+}
+
+.commandGroup .rtlButton {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  gap: 6px;
+  border-color: #b9852e;
+  color: #ffd37d;
+  background: rgb(130 82 9 / 22%);
+}
+
+.rtlButton small {
+  margin: 0 !important;
+}
+
+.surface button {
+  cursor: pointer;
+}
+
+.surface button:hover { border-color: var(--color-primary-hover); filter: brightness(1.12); }
+.surface button:active { transform: translateY(1px); }
+
+.surface button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.25);
+  opacity: 0.42;
+}
+
+.surface button:disabled:hover {
+  filter: saturate(0.25);
+}
+
+.commandToast {
+  position: absolute;
+  z-index: 5;
+  top: 6px;
+  right: 10px;
+  padding: 4px 9px;
+  border: 1px solid #248cb8;
+  border-radius: 4px;
+  color: #78d9ff;
+  background: rgb(3 29 50 / 92%);
+  font-size: 9px;
+}
+
+.commandToastError { border-color: #be643b; color: #ffc28f; }
+
+.commandToastWarning {
+  border-color: #987329;
+  color: #ffd987;
+  background: rgb(84 59 13 / 92%);
+}
+
+@media (max-height: 900px) {
+  .surface { gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
+  .directionGroup,
+  .axisGroup,
+  .commandGroup { padding: 18px 6px 5px; }
+  .groupLabel { top: 3px; left: 7px; font-size: 9px; }
+  .directionPad,
+  .axisControls,
+  .commandGroup { gap: var(--space-1); }
+  .directionPad button,
+  .axisControls button { font-size: 10px; }
+  .commandGroup button > span { font-size: 10px; }
+  .commandGroup button small { font-size: 8px; }
+}

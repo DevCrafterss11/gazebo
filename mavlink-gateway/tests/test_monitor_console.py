@@ -60,6 +60,26 @@ def test_monitor_console_formats_important_return_messages() -> None:
     assert "GPS not healthy" in snapshot["entries"][1]["text"]
     assert snapshot["entries"][2]["severity"] == "error"
     assert "DENIED" in snapshot["entries"][2]["text"]
+    assert all(entry["direction"] == "RX" for entry in snapshot["entries"])
+
+
+def test_monitor_console_records_outbound_teaching_event() -> None:
+    state = MonitorConsoleState("udpin:0.0.0.0:14553")
+
+    state.record_local_event(
+        "COMMAND_LONG",
+        "command",
+        "info",
+        "TAKEOFF · NAV_TAKEOFF (22) altitude=10.0m target=1/1",
+        source_system=1,
+        source_component=1,
+        direction="TX",
+    )
+
+    entry = state.snapshot()["entries"][0]
+    assert entry["direction"] == "TX"
+    assert entry["sourceSystem"] == 1
+    assert "NAV_TAKEOFF" in entry["text"]
 
 
 def test_monitor_console_rate_limits_high_frequency_telemetry() -> None:
@@ -72,6 +92,24 @@ def test_monitor_console_rate_limits_high_frequency_telemetry() -> None:
     assert snapshot["packetCount"] == 2
     assert snapshot["messageCounts"]["ATTITUDE"] == 2
     assert len(snapshot["entries"]) == 0
+
+
+def test_monitor_console_explains_received_mission_item() -> None:
+    state = MonitorConsoleState("udpin:0.0.0.0:14553")
+    state.handle_message(Message(
+        "MISSION_ITEM_INT",
+        seq=2,
+        command=mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+        frame=mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+        x=341251590,
+        y=1088289650,
+        z=10.0,
+    ))
+
+    entry = state.snapshot()["entries"][0]
+    assert entry["direction"] == "RX"
+    assert "NAV_WAYPOINT (16)" in entry["text"]
+    assert "lat=34.1251590" in entry["text"]
 
 
 def test_monitor_console_only_reports_heartbeat_state_changes() -> None:

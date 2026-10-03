@@ -201,11 +201,64 @@
 .planGrid span { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 13px; border: 1px solid #165a83; border-radius: 6px; color: #c0dfef; background: rgb(5 42 69 / 70%); font-size: 12px; }
 
 .flightGrid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 12px; }
-.flightGrid > section { min-height: 290px; }
-.flightControls { grid-column: 1 / -1; min-height: 220px; }
+.flightGrid > section { min-height: 0; }
+.flightControls { grid-column: 1 / -1; height: 220px; }
+.flightControls > section { height: 100%; }
 .flightView { min-height: 380px !important; }
 .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metricCard { min-height: 74px; }
+
+.mavlinkMonitor {
+  grid-column: 1 / -1;
+  height: calc(100dvh - var(--top-header-height) - 30px);
+  min-height: 420px !important;
+}
+
+.mavlinkMonitor > section { height: 100%; }
+
+.terminalSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgb(29 86 119 / 48%);
+  color: #6f96ad;
+  background: rgb(2 18 31 / 62%);
+  font-size: 10px;
+}
+
+.terminalSummary strong { color: #72ddff; font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 600; }
+.terminalConnected { color: #5af0bd; font-family: var(--font-mono, monospace); font-size: 10px; }
+.terminalDisconnected { color: #efb16c; font-family: var(--font-mono, monospace); font-size: 10px; }
+
+.mavlinkTerminal {
+  height: calc(100% - 28px);
+  overflow: auto;
+  padding: 7px 11px 10px;
+  background: #020d16;
+  color: #9ab8c9;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  line-height: 1.6;
+  scrollbar-color: #1c5874 #061b2b;
+}
+
+.terminalLine {
+  display: grid;
+  grid-template-columns: 72px 128px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 18px;
+  white-space: nowrap;
+}
+
+.terminalLine time { color: #54768c; }
+.terminalLine b { overflow: hidden; color: #63c9ec; font-weight: 600; text-overflow: ellipsis; }
+.terminalLine span { overflow: hidden; text-overflow: ellipsis; }
+.terminalWarning span { color: #f0ca73; }
+.terminalError span { color: #ff8f98; }
+.terminalDebug { opacity: 0.7; }
+.terminalEmpty { color: #54768c; }
 
 .tablePanel { padding: 0; overflow: hidden; }
 .tableHeader { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(100px, 0.7fr)) 22px; gap: 12px; padding: 11px 13px; color: #6e9fbd; background: rgb(3 27 48 / 70%); font-size: 9px; }

@@ -1,0 +1,214 @@
+.experimentLayout {
+  display: grid;
+  grid-template-rows: 84px 60px minmax(0, 1fr);
+  gap: 6px;
+  height: 100%;
+}
+
+.experimentHeader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(90deg, rgb(4 31 57 / 98%) 0%, rgb(6 48 84 / 82%) 52%, rgb(3 27 52 / 96%) 100%),
+    repeating-linear-gradient(115deg, transparent 0 35px, rgb(30 112 165 / 9%) 36px 37px);
+  box-shadow: var(--shadow-panel);
+}
+
+.experimentHeader::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+  content: "";
+}
+
+.headerCopy {
+  z-index: 1;
+  max-width: 940px;
+}
+
+.headerCopy h1 {
+  margin: 0 0 5px;
+  font-size: var(--type-page-title);
+  line-height: 1.15;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px rgb(24 161 255 / 28%);
+}
+
+.headerCopy p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--type-body);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerMotto {
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-left: auto;
+  padding-left: 50px;
+  color: #b8dcf6;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.headerMotto::after {
+  width: 107px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #a6e4ff);
+  content: "";
+}
+
+.droneSilhouette {
+  position: absolute;
+  right: 200px;
+  width: 220px;
+  height: 58px;
+  opacity: 0.28;
+  filter: drop-shadow(0 0 12px rgb(30 183 255 / 35%));
+}
+
+.droneBody {
+  position: absolute;
+  top: 23px;
+  left: 86px;
+  width: 48px;
+  height: 20px;
+  border-radius: 50% 50% 30% 30%;
+  background: #63aacb;
+}
+
+.droneBody::before,
+.droneBody::after {
+  position: absolute;
+  top: 5px;
+  width: 76px;
+  height: 4px;
+  background: #63aacb;
+  content: "";
+}
+
+.droneBody::before { right: 38px; transform: rotate(-8deg); }
+.droneBody::after { left: 38px; transform: rotate(8deg); }
+
+.rotorLeft,
+.rotorRight {
+  position: absolute;
+  top: 15px;
+  width: 66px;
+  height: 3px;
+  border-radius: 50%;
+  background: #9bdcf1;
+}
+
+.rotorLeft { left: 15px; }
+.rotorRight { right: 15px; }
+
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-items: center;
+  padding: 7px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #08233f, #051a31);
+  box-shadow: var(--shadow-panel);
+}
+
+.step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.step:disabled { cursor: default; }
+
+.stepNumber {
+  z-index: 1;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #7199bd;
+  border-radius: 50%;
+  color: #dcefff;
+  background: #0a2d4e;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.stepTitle {
+  z-index: 1;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepConnector {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: calc(50% + 50px);
+  width: calc(50% - 38px);
+  height: 1px;
+  background: #174d79;
+}
+
+.completed .stepNumber {
+  border-color: #1e9ccf;
+  color: #85ddff;
+}
+
+.active {
+  height: 40px;
+  color: #fff;
+  background: linear-gradient(90deg, #0862e7 0%, #0aa8ff 75%, transparent 76%);
+  clip-path: polygon(0 0, 89% 0, 100% 50%, 89% 100%, 0 100%, 7% 50%);
+}
+
+.active .stepNumber {
+  border: 2px solid #d8f7ff;
+  background: #0b72ee;
+  box-shadow: 0 0 13px #00c2ff;
+}
+
+.active .stepConnector {
+  display: none;
+}
+
+.experimentBody {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 1500px) {
+  .experimentLayout { grid-template-rows: 78px 56px minmax(0, 1fr); }
+  .headerCopy h1 { font-size: 23px; }
+  .stepTitle { font-size: 11px; }
+  .step { gap: 5px; }
+  .stepNumber { width: 31px; height: 31px; }
+}

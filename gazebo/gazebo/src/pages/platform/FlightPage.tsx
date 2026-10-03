@@ -9,12 +9,14 @@ import { FlightSceneViewport } from '../../components/map/FlightSceneViewport';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useFlightStore } from '../../stores/flightStore';
 import { useTelemetryStore } from '../../stores/telemetryStore';
+import { MavlinkMonitorPanel } from './MavlinkMonitorPanel';
 import styles from './PlatformPages.module.css';
 
 export function FlightPage() {
   const runtime = useEnvironmentStore((state) => state.runtime);
   const status = useFlightStore((state) => state.status);
-  const samples = useTelemetryStore((state) => state.samples);
+  const flightPath = useTelemetryStore((state) => state.flightPath);
+  const mapHome = useTelemetryStore((state) => state.mapHome);
   const latest = useTelemetryStore((state) => state.latest);
   const telemetryAvailability = useTelemetryStore((state) => state.availability);
   const connect = useTelemetryStore((state) => state.connect);
@@ -37,7 +39,7 @@ export function FlightPage() {
         <div className={styles.flightGrid}>
           <section className={styles.flightView}>
         <PanelShell title="实时飞行视图" icon={Crosshair} action={<span>共享飞行状态</span>} emphasis="primary">
-              <FlightSceneViewport altitudeMeters={status.position.altitude} speedMetersPerSecond={status.groundSpeed} currentTask="实时飞控" north={status.north} east={status.east} yaw={status.yaw} mode={status.mode} flightPath={samples.map((sample) => ({ north: sample.north ?? 0, east: sample.east ?? 0 }))} />
+              <FlightSceneViewport altitudeMeters={status.position.altitude} armed={status.armed} speedMetersPerSecond={status.groundSpeed} currentTask="实时飞控" latitude={status.position.latitude} longitude={status.position.longitude} home={mapHome ?? status.homePosition} north={status.north} east={status.east} yaw={status.yaw} mode={status.mode} flightPath={flightPath} />
             </PanelShell>
           </section>
           <section className={styles.panel}>
@@ -57,6 +59,9 @@ export function FlightPage() {
             <PanelShell title="基础飞行控制" icon={RadioTower} action={<span>ARM · TAKEOFF · HOLD · RTL · LAND</span>} emphasis="secondary">
               <FlightControlSurface />
             </PanelShell>
+          </section>
+          <section className={styles.mavlinkMonitor}>
+            <MavlinkMonitorPanel />
           </section>
         </div>
       )}

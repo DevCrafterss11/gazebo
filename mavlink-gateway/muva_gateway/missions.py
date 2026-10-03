@@ -5,7 +5,7 @@ import hashlib
 import json
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from typing import Any, TYPE_CHECKING
@@ -62,13 +62,29 @@ class MissionService:
         state: VehicleState,
         transport: MavlinkTransport,
         operation_lock: threading.RLock,
+        monitor_event: Callable[..., None] | None = None,
     ) -> None:
         self.settings = settings
         self.state = state
         self.transport = transport
         self._operation_lock = operation_lock
+        self._monitor_event = monitor_event
         self._last_verified: list[MissionItem] | None = None
         self._last_uploaded_at = 0.0
+
+    def _record_tx(self, message_type: str, text: str) -> None:
+        if self._monitor_event is None:
+            return
+        target_system, target_component = self.state.target
+        self._monitor_event(
+            message_type,
+            "mission",
+            "info",
+            text,
+            source_system=target_system,
+            source_component=target_component,
+            direction="TX",
+        )
 
     @contextmanager
     def _operation(self) -> Iterator[None]:
@@ -330,18 +346,28 @@ class MissionService:
         return items
 
     def _send_mission_count(self, target_system: int, target_component: int, count: int) -> None:
+        self._record_tx("MISSION_COUNT", f"upload count={count} target={target_system}/{target_component}")
         self.transport.send(lambda connection: connection.mav.mission_count_send(target_system, target_component, count))
 
     def _send_request_list(self, target_system: int, target_component: int) -> None:
+        self._record_tx("MISSION_REQUEST_LIST", f"download mission list target={target_system}/{target_component}")
         self.transport.send(lambda connection: connection.mav.mission_request_list_send(target_system, target_component))
 
     def _send_request_item(self, target_system: int, target_component: int, seq: int) -> None:
+        self._record_tx("MISSION_REQUEST_INT", f"download seq={seq} target={target_system}/{target_component}")
         self.transport.send(lambda connection: connection.mav.mission_request_int_send(target_system, target_component, seq))
 
     def _send_mission_ack(self, target_system: int, target_component: int, result: int) -> None:
+        result_name = self._mission_result_name(result)
+        self._record_tx("MISSION_ACK", f"download complete -> {result_name} target={target_system}/{target_component}")
         self.transport.send(lambda connection: connection.mav.mission_ack_send(target_system, target_component, result))
 
     def _send_item_with_retry(self, target_system: int, target_component: int, item: MissionItem, request_type: str) -> None:
+        command_name = COMMAND_NAMES.get(item.command, str(item.command))
+        self._record_tx(
+            "MISSION_ITEM_INT",
+            f"upload seq={item.seq} command={command_name} lat={item.latitude:.7f} lon={item.longitude:.7f} alt={item.altitude:.1f}m target={target_system}/{target_component}",
+        )
         self.transport.send(
             lambda connection: self._send_item(connection, target_system, target_component, item, request_type)
         )

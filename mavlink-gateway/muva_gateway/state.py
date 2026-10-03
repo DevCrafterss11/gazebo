@@ -26,6 +26,19 @@ def _finite(value: float, default: float = 0.0) -> float:
     return value if math.isfinite(value) else default
 
 
+def relative_position_meters(
+    latitude: float,
+    longitude: float,
+    origin_latitude: float,
+    origin_longitude: float,
+) -> tuple[float, float]:
+    """Return a local north/east offset using the experiment's short-range map."""
+    north = (latitude - origin_latitude) * 111_111.0
+    longitude_scale = 111_111.0 * math.cos(math.radians(origin_latitude))
+    east = (longitude - origin_longitude) * longitude_scale
+    return _finite(north), _finite(east)
+
+
 class VehicleState:
     def __init__(self, heartbeat_timeout: float = 3.0) -> None:
         self._condition = threading.Condition(threading.RLock())

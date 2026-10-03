@@ -4,7 +4,7 @@ import threading
 import time
 import math
 from contextlib import contextmanager
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from pymavlink import mavutil
@@ -56,11 +56,27 @@ class CommandService:
         state: VehicleState,
         transport: MavlinkTransport,
         operation_lock: threading.RLock | None = None,
+        monitor_event: Callable[..., None] | None = None,
     ) -> None:
         self.settings = settings
         self.state = state
         self.transport = transport
         self._command_lock = operation_lock or threading.RLock()
+        self._monitor_event = monitor_event
+
+    def _record_tx(self, message_type: str, text: str) -> None:
+        if self._monitor_event is None:
+            return
+        target_system, target_component = self.state.target
+        self._monitor_event(
+            message_type,
+            "command",
+            "info",
+            text,
+            source_system=target_system,
+            source_component=target_component,
+            direction="TX",
+        )
 
     @contextmanager
     def _operation(self) -> Iterator[None]:
@@ -88,6 +104,7 @@ class CommandService:
                 return {"accepted": True, "mode": mode, "idempotent": True}
             target_system, _ = self.state.target
             heartbeat_generation = self.state.heartbeat_generation()
+            self._record_tx("SET_MODE", f"target={target_system} mode={mode} custom_mode={mapping[mode]}")
             self.transport.send(
                 lambda connection: connection.mav.set_mode_send(
                     target_system,
@@ -136,6 +153,11 @@ class CommandService:
             generation = self.state.ack_generation(command)
             status_generation = self.state.status_generation()
             target_system, target_component = self.state.target
+            action = "ARM" if arm else "DISARM"
+            self._record_tx(
+                "COMMAND_LONG",
+                f"{action} · COMPONENT_ARM_DISARM ({command}) param1={1 if arm else 0} target={target_system}/{target_component}",
+            )
             self.transport.send(
                 lambda connection: connection.mav.command_long_send(
                     target_system,
@@ -182,6 +204,10 @@ class CommandService:
             command = mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
             generation = self.state.ack_generation(command)
             target_system, target_component = self.state.target
+            self._record_tx(
+                "COMMAND_LONG",
+                f"TAKEOFF · NAV_TAKEOFF ({command}) altitude={altitude:.1f}m target={target_system}/{target_component}",
+            )
             self.transport.send(
                 lambda connection: connection.mav.command_long_send(
                     target_system,
@@ -249,6 +275,10 @@ class CommandService:
                 | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE
                 | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE
                 | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+            )
+            self._record_tx(
+                "SET_POSITION_TARGET_GLOBAL_INT",
+                f"HOLD · lat={latitude:.7f} lon={longitude:.7f} alt={altitude:.1f}m target={target_system}/{target_component}",
             )
             self.transport.send(
                 lambda connection: connection.mav.set_position_target_global_int_send(
@@ -327,6 +357,10 @@ class CommandService:
                 | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE
                 | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
             )
+            self._record_tx(
+                "SET_POSITION_TARGET_GLOBAL_INT",
+                f"MOVE_{direction.upper()} · distance={metres:.1f}m lat={latitude:.7f} lon={longitude:.7f} alt={altitude:.1f}m target={target_system}/{target_component}",
+            )
             self.transport.send(lambda connection: connection.mav.set_position_target_global_int_send(
                 int(time.time() * 1000) & 0xFFFFFFFF, target_system, target_component,
                 mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, type_mask,
@@ -348,6 +382,10 @@ class CommandService:
             command = mavutil.mavlink.MAV_CMD_CONDITION_YAW
             generation = self.state.ack_generation(command)
             target_system, target_component = self.state.target
+            self._record_tx(
+                "COMMAND_LONG",
+                f"YAW_{direction.upper()} · CONDITION_YAW ({command}) degrees={degrees:.1f} target={target_system}/{target_component}",
+            )
             self.transport.send(lambda connection: connection.mav.command_long_send(
                 target_system, target_component, command, 0,
                 degrees, 0, -1 if direction == "left" else 1, 1, 0, 0, 0,
@@ -377,6 +415,10 @@ class CommandService:
             command = mavutil.mavlink.MAV_CMD_MISSION_START
             generation = self.state.ack_generation(command)
             target_system, target_component = self.state.target
+            self._record_tx(
+                "COMMAND_LONG",
+                f"MISSION_START ({command}) first=0 last=0 target={target_system}/{target_component}",
+            )
             self.transport.send(
                 lambda connection: connection.mav.command_long_send(
                     target_system,

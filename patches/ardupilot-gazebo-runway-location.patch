@@ -9,10 +9,9 @@ index 259ac71..5a04003 100755
 -      <latitude_deg>-35.363262</latitude_deg>
 -      <longitude_deg>149.165237</longitude_deg>
 -      <elevation>584</elevation>
-+      <latitude_deg>34.341600</latitude_deg>
-+      <longitude_deg>108.939800</longitude_deg>
-+      <elevation>405</elevation>
++      <latitude_deg>34.125159</latitude_deg>
++      <longitude_deg>108.828965</longitude_deg>
++      <elevation>412</elevation>
        <heading_deg>0</heading_deg>
        <surface_model>EARTH_WGS84</surface_model>
      </spherical_coordinates>
-

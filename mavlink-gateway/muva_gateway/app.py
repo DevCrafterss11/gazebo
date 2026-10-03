@@ -20,7 +20,7 @@ from .commands import CommandService, GatewayCommandError
 from .config import Settings
 from .missions import MissionService
 from .monitor import ReadOnlyMavlinkMonitor
-from .state import VehicleState
+from .state import VehicleState, relative_position_meters
 from .transport import MavlinkTransport
 
 LOGGER = logging.getLogger(__name__)
@@ -86,8 +86,12 @@ class Gateway:
         self.monitor = ReadOnlyMavlinkMonitor(settings.monitor_endpoint, settings.heartbeat_timeout)
         operation_lock = threading.RLock()
         self.operation_lock = operation_lock
-        self.commands = CommandService(settings, self.state, self.transport, operation_lock)
-        self.missions = MissionService(settings, self.state, self.transport, operation_lock)
+        self.commands = CommandService(
+            settings, self.state, self.transport, operation_lock, self.monitor.state.record_local_event,
+        )
+        self.missions = MissionService(
+            settings, self.state, self.transport, operation_lock, self.monitor.state.record_local_event,
+        )
         self._platform_lock = threading.RLock()
         self._current_configuration: dict[str, Any] | None = None
         self._sessions: dict[str, dict[str, Any]] = {}
@@ -170,6 +174,16 @@ class Gateway:
         telemetry = snapshot["telemetry"]
         vehicle = snapshot["vehicle"]
         connection = snapshot["connection"]
+        home = snapshot["home"]
+        north = 0.0
+        east = 0.0
+        if home.get("valid"):
+            north, east = relative_position_meters(
+                float(telemetry.get("latitude", 0.0)),
+                float(telemetry.get("longitude", 0.0)),
+                float(home.get("latitude", 0.0)),
+                float(home.get("longitude", 0.0)),
+            )
         self._sequence += 1
         gps_fix = int(telemetry.get("gpsFixType", 0))
         fix_type = "3D FIX" if gps_fix >= 3 else "NO FIX"
@@ -180,7 +194,7 @@ class Gateway:
             "source": "mavlink",
             "payload": {
                 "type": "SNAPSHOT",
-                "position": {"latitude": float(telemetry.get("latitude", 0.0)), "longitude": float(telemetry.get("longitude", 0.0)), "altitude": float(telemetry.get("altitude", 0.0))},
+                "position": {"latitude": float(telemetry.get("latitude", 0.0)), "longitude": float(telemetry.get("longitude", 0.0)), "altitude": float(telemetry.get("altitude", 0.0)), "north": north, "east": east},
                 "velocity": {"groundSpeed": float(telemetry.get("groundSpeed", 0.0)), "verticalSpeed": float(telemetry.get("climbRate", 0.0))},
                 "attitude": {"roll": float(telemetry.get("roll", 0.0)), "pitch": float(telemetry.get("pitch", 0.0)), "yaw": float(telemetry.get("yaw", telemetry.get("heading", 0.0)))},
                 "batteryPercent": float(max(0, telemetry.get("battery", 0))),
@@ -198,9 +212,9 @@ DRONE_MODELS: list[dict[str, Any]] = [
 ]
 
 SCENES: list[dict[str, Any]] = [
-    {"id": "campus", "name": "校园环境", "description": "包含教学楼、操场和开阔起降区的基础教学场景。", "latitude": 34.3416, "longitude": 108.9398, "altitude": 410, "weather": "晴朗 · 22°C", "wind": "东北风 1.2 m/s", "image": "campus"},
-    {"id": "training-field", "name": "标准训练场", "description": "带标准训练点和航线标记的封闭训练区域。", "latitude": 34.3431, "longitude": 108.9422, "altitude": 406, "weather": "晴朗 · 21°C", "wind": "东风 0.8 m/s", "image": "training-field"},
-    {"id": "open-area", "name": "空旷环境", "description": "障碍物较少，适合初次起飞和姿态控制练习。", "latitude": 34.3388, "longitude": 108.9354, "altitude": 398, "weather": "多云 · 20°C", "wind": "西北风 2.1 m/s", "image": "open-area"},
+    {"id": "campus", "name": "校园环境", "description": "包含教学楼、操场和开阔起降区的基础教学场景。", "latitude": 34.1251589, "longitude": 108.8289653, "altitude": 412, "weather": "晴朗 · 22°C", "wind": "东北风 1.2 m/s", "image": "campus"},
+    {"id": "training-field", "name": "标准训练场", "description": "带标准训练点和航线标记的封闭训练区域。", "latitude": 34.1266589, "longitude": 108.8313653, "altitude": 415, "weather": "晴朗 · 21°C", "wind": "东风 0.8 m/s", "image": "training-field"},
+    {"id": "open-area", "name": "空旷环境", "description": "障碍物较少，适合初次起飞和姿态控制练习。", "latitude": 34.1223589, "longitude": 108.8245653, "altitude": 395, "weather": "多云 · 20°C", "wind": "西北风 2.1 m/s", "image": "open-area"},
 ]
 
 
@@ -516,6 +530,15 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     async def v1_clear_mission(request: Request) -> dict[str, bool]:
         gateway_instance = gateway_from_request(request)
         target_system, target_component = gateway_instance.state.target
+        gateway_instance.monitor.state.record_local_event(
+            "MISSION_CLEAR_ALL",
+            "mission",
+            "info",
+            f"clear all mission items target={target_system}/{target_component}",
+            source_system=target_system,
+            source_component=target_component,
+            direction="TX",
+        )
         gateway_instance.transport.send(lambda connection: connection.mav.mission_clear_all_send(target_system, target_component))
         gateway_instance.state.set_mission_state("idle")
         gateway_instance.state.set_mission_verification(False)

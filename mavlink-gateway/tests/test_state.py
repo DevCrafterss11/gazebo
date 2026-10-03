@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from pymavlink import mavutil
 
-from muva_gateway.state import VehicleState
+from muva_gateway.state import VehicleState, relative_position_meters
 
 
 class Message:
@@ -66,6 +67,13 @@ def test_state_normalises_core_telemetry() -> None:
     assert snapshot["telemetry"]["battery"] == 76
     assert snapshot["telemetry"]["satellites"] == 17
     assert snapshot["telemetry"]["hdop"] == 0.72
+
+
+def test_relative_position_uses_north_east_metres() -> None:
+    north, east = relative_position_meters(34.34169, 108.939908, 34.3416, 108.9398)
+
+    assert north == pytest.approx(10.0, abs=0.1)
+    assert east == pytest.approx(9.9, abs=0.2)
 
 
 def test_command_ack_generation_is_monotonic() -> None:

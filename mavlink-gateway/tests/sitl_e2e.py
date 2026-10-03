@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 
 BASE_URL = os.getenv("MUVA_GATEWAY_URL", "http://127.0.0.1:8000")
-HOME = (34.3416, 108.9398)
+HOME = (34.1251589, 108.8289653)
 
 
 def request(path: str, method: str = "GET", payload: object | None = None) -> dict:
@@ -56,8 +56,8 @@ def main() -> None:
         "verify": True,
         "items": [
             {"command": "TAKEOFF", "latitude": HOME[0], "longitude": HOME[1], "altitude": 6},
-            {"command": "WAYPOINT", "latitude": 34.341735, "longitude": HOME[1], "altitude": 6},
-            {"command": "WAYPOINT", "latitude": 34.341735, "longitude": 108.939963, "altitude": 6},
+            {"command": "WAYPOINT", "latitude": 34.1252939, "longitude": HOME[1], "altitude": 6},
+            {"command": "WAYPOINT", "latitude": 34.1252939, "longitude": 108.8291283, "altitude": 6},
             {"command": "LAND", "latitude": HOME[0], "longitude": HOME[1], "altitude": 0},
         ],
     }
