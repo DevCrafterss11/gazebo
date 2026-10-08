@@ -15,7 +15,13 @@ import { AdminSettingsPage } from '../pages/admin/AdminSettingsPage';
 import { AdminUsersPage } from '../pages/admin/AdminUsersPage';
 import { BasicFlightPage } from '../pages/experiments/basic-flight/BasicFlightPage';
 import { ExperimentComingSoonPage } from '../pages/experiments/ExperimentComingSoonPage';
+import { SwarmExperimentPage } from '../pages/experiments/swarm/SwarmExperimentPage';
+import { SwarmRecordPage } from '../pages/experiments/swarm/SwarmRecordPage';
 import { ExperimentsPage } from '../pages/experiments/ExperimentsPage';
+import { AssessmentPage } from '../pages/experiments/assessment/AssessmentPage';
+import { AssessmentRecordPage } from '../pages/experiments/assessment/AssessmentRecordPage';
+import { RealAssessmentPage } from '../pages/experiments/assessment/RealAssessmentPage';
+import { assessmentSource } from '../services/assessment/droneAdapter';
 import { AnalyticsPage } from '../pages/platform/AnalyticsPage';
 import { DashboardPage } from '../pages/platform/DashboardPage';
 import { FlightPage } from '../pages/platform/FlightPage';
@@ -62,8 +68,10 @@ export const router = createBrowserRouter([
             element: studentOnly(<ExperimentLayout />),
             children: [{ index: true, element: <BasicFlightPage /> }],
           },
-          { path: 'experiments/swarm', element: studentOnly(<ExperimentComingSoonPage />) },
-          { path: 'experiments/mission', element: studentOnly(<ExperimentComingSoonPage />) },
+          { path: 'experiments/swarm', element: studentOnly(<SwarmExperimentPage />) },
+          { path: 'records/swarm/:id', element: studentOnly(<SwarmRecordPage />) },
+          { path: 'experiments/mission', element: studentOnly(assessmentSource === 'real' ? <RealAssessmentPage /> : <AssessmentPage />) },
+          { path: 'records/assessment/:id', element: studentOnly(<AssessmentRecordPage />) },
           { path: 'experiments/security', element: studentOnly(<ExperimentComingSoonPage />) },
           { path: 'experiments/custom-security', element: studentOnly(<ExperimentComingSoonPage />) },
           { path: 'flight', element: teacherOrStudent(<FlightPage />) },

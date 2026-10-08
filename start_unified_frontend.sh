@@ -11,5 +11,6 @@ node_bin_dir="${project_dir}/.tools/node/bin"
 }
 
 export PATH="${node_bin_dir}:${PATH}"
+export VITE_DATA_SOURCE="${VITE_DATA_SOURCE:-mock}"
 cd "${frontend_dir}"
 exec npm run dev -- "$@"

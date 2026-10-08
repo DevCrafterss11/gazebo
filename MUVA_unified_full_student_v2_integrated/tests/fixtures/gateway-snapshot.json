@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "1.0",
+  "type": "telemetry",
+  "timestamp": 1791460392951,
+  "vehicleId": "mavlink-1",
+  "sequence": 1,
+  "source": "mavlink",
+  "payload": {
+    "type": "SNAPSHOT",
+    "position": { "latitude": 34.3416, "longitude": 108.9398, "altitude": 18.4, "north": 0, "east": 0 },
+    "velocity": { "groundSpeed": 5, "verticalSpeed": 0.2 },
+    "attitude": { "roll": 0, "pitch": 0, "yaw": 0 },
+    "batteryPercent": 76,
+    "gps": { "satellites": 17, "fixType": "3D FIX", "hdop": 0.72 },
+    "health": { "ekfStatus": { "healthy": true, "state": "NORMAL" }, "mavlinkStatus": { "connected": true, "heartbeat": true, "version": "MAVLink 2" } },
+    "system": { "mode": "GUIDED", "armed": true }
+  }
+}

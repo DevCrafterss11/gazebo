@@ -24,6 +24,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { EnvironmentStatus } from '../../pages/experiments/basic-flight/components/EnvironmentStatus';
+import { useAssessmentStore } from '../../stores/assessmentStore';
+import { assessmentSource } from '../../services/assessment/droneAdapter';
 import { useAuthStore } from '../../stores/authStore';
 import styles from './MainLayout.module.css';
 
@@ -51,7 +53,7 @@ const studentSecondary: MenuItem[] = [
 const experimentItems: MenuItem[] = [
   { label: '实验一 · 基础飞行', icon: Gauge, to: '/experiments/basic-flight' },
   { label: '实验二 · 集群飞行控制', icon: Network, to: '/experiments/swarm' },
-  { label: '实验三 · 任务协同', icon: Network, to: '/experiments/mission' },
+  { label: '实验三 · 综合飞行考核', icon: Network, to: '/experiments/mission' },
   { label: '实验四 · 安全攻防对抗', icon: Network, to: '/experiments/security' },
   { label: '实验五 · 自定义安全对抗', icon: Network, to: '/experiments/custom-security' },
 ];
@@ -83,6 +85,7 @@ export function Sidebar() {
   const { pathname } = useLocation();
   const role = useAuthStore((state) => state.role);
   const [experimentsExpanded, setExperimentsExpanded] = useState(() => pathname.startsWith('/experiments'));
+  const assessmentEnvironment = useAssessmentStore((state) => state.run.environment);
 
   useEffect(() => {
     if (pathname.startsWith('/experiments/')) setExperimentsExpanded(true);
@@ -158,7 +161,7 @@ export function Sidebar() {
         ))}
       </nav>
       {/* Preserve the original simulator status block for the student frontend. */}
-      <EnvironmentStatus />
+      {pathname.startsWith('/experiments/mission') ? <div className={styles.menuSection}><strong>实验三 · {assessmentSource === 'real' ? '真实只读观测' : '前端 Mock 环境'}</strong><p>{assessmentSource === 'real' ? '禁止启动或接管共享飞控' : `模拟状态：${assessmentEnvironment}`}</p><small>{assessmentSource === 'real' ? '遥测仅显示已验证的真实数据' : '不连接 Gazebo / SITL / MAVLink'}</small></div> : <EnvironmentStatus />}
     </aside>
   );
 }

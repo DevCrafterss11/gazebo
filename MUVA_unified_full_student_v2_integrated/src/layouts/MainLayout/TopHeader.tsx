@@ -8,6 +8,7 @@ import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { usePlatformUiStore } from '../../stores/platformUiStore';
 import styles from './MainLayout.module.css';
+import { assessmentSource } from '../../services/assessment/droneAdapter';
 
 type HeaderPopover = 'notifications' | 'messages' | 'user' | null;
 
@@ -66,6 +67,10 @@ export function TopHeader() {
   const environmentRunning = runtime.gazebo === 'RUNNING'
     && runtime.ardupilotSitl === 'RUNNING'
     && runtime.mavlinkGateway === 'CONNECTED';
+  const inSwarmExperiment = pathname.startsWith('/experiments/swarm');
+  const inAssessment = pathname.startsWith('/experiments/mission') || pathname.startsWith('/records/assessment');
+  const isolatedMock = inSwarmExperiment || inAssessment && assessmentSource === 'mock';
+  const assessmentReadOnly = inAssessment && assessmentSource === 'real';
   const unreadCount = notifications.filter((notification) => !notification.read).length;
 
   const homePath = getRoleHomePath(role);
@@ -80,8 +85,8 @@ export function TopHeader() {
         </Link>
         <div className={styles.slogan}>探索天空 · 安全飞行 · 智能未来</div>
         <div className={styles.headerActions} ref={actionAreaRef}>
-          <button className={`${styles.runtimeBadge} ${environmentRunning ? '' : styles.runtimeIdle}`} type="button" onClick={openEnvironment}>
-            仿真环境：{environmentRunning ? '运行中' : isStarting ? '启动中' : '待启动'}
+          <button className={`${styles.runtimeBadge} ${environmentRunning || isolatedMock ? '' : styles.runtimeIdle}`} type="button" onClick={assessmentReadOnly ? () => showToast('实验三真实模式只读：当前不启动或控制共享飞控。') : isolatedMock ? () => showToast('当前实验使用独立前端 Mock 环境，不连接 Gazebo、SITL 或真实飞控。') : openEnvironment}>
+            仿真环境：{assessmentReadOnly ? 'REAL 只读' : isolatedMock ? 'Mock 模式' : environmentRunning ? '运行中' : isStarting ? '启动中' : '待启动'}
           </button>
           <div className={styles.headerControl}>
             <button className={`${styles.iconButton} ${activePopover === 'notifications' ? styles.headerButtonActive : ''}`} type="button" aria-label={`通知，${unreadCount} 条未读`} aria-expanded={activePopover === 'notifications'} onClick={() => togglePopover('notifications')}>

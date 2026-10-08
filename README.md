@@ -42,6 +42,10 @@ git -C ardupilot_gazebo apply ../patches/ardupilot-gazebo-runway-location.patch
 
 ## 启动实验一
 
+统一教学前端的实验一、二、三可独立使用前端 Mock：运行 `./start_unified_frontend.sh`，或在 `MUVA_unified_full_student_v2_integrated` 目录执行 `npm run dev`（本机 `.env.local` 应设置 `VITE_DATA_SOURCE=mock`）。无需启动后端。实验三完成步骤一的部件学习及知识自测后，点击页面底部的「完成本阶段，进入下一步」。
+
+需要使用真实网关调试实验一时，先启动对应后端，再显式运行 `VITE_DATA_SOURCE=api ./start_unified_frontend.sh`；`./start_all_muva.sh` 会自动使用 API 模式。
+
 安装前端依赖：
 
 ```bash
@@ -67,4 +71,3 @@ cd ../..
 - 前端：`http://127.0.0.1:5173`
 - 实验一：`http://127.0.0.1:5173/experiments/basic-flight`
 - 后端：`http://127.0.0.1:8000`
-

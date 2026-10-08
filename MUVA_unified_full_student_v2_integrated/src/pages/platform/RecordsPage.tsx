@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 
 import { EmptyState } from '../../components/common/EmptyState/EmptyState';
 import { useRecordsStore } from '../../stores/recordsStore';
+import { savedSwarmRecords } from '../../stores/swarmStore';
+import { listAssessmentRecords } from '../../stores/assessmentStore';
+import { totalScore } from '../../domain/assessment/ScoringEngine';
 import styles from './PlatformPages.module.css';
 
 const formatDateTime = (timestamp: string): string => new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
@@ -11,6 +14,8 @@ export function RecordsPage() {
   const records = useRecordsStore((state) => state.records);
   const isLoading = useRecordsStore((state) => state.isLoading);
   const error = useRecordsStore((state) => state.error);
+  const swarmRecords = savedSwarmRecords();
+  const assessmentRecords = listAssessmentRecords();
 
   return (
     <div className={styles.page}>
@@ -19,8 +24,10 @@ export function RecordsPage() {
         <span><ClipboardList size={16} />{records.length} 条记录</span>
       </header>
       {error ? <section className={styles.panel} role="alert">{error}</section> : null}
+      {swarmRecords.length > 0 ? <section className={styles.panel}><h2>实验二 · 多无人机集群区域规划与协同飞行</h2>{swarmRecords.map((record) => <div key={record.runId}><Link to={`/records/swarm/${record.runId}`}><strong>{record.runId}</strong> · {formatDateTime(record.completedAt)} · {record.status} · {record.score} 分 · 覆盖率 {record.coverage.toFixed(1)}% · 查看报告</Link></div>)}</section> : null}
+      {assessmentRecords.length > 0 ? <section className={styles.panel}><h2>实验三 · 四旋翼综合飞行考核</h2>{assessmentRecords.map((record) => <div key={record.runId}><Link to={`/records/assessment/${record.runId}`}><strong>{record.runId}</strong> · {new Date(record.completedAt ?? record.startedAt).toLocaleString()} · {totalScore(record.scoreBreakdown)} 分 · 查看独立报告</Link></div>)}</section> : null}
       {isLoading && records.length === 0 ? <section className={styles.panel}>正在加载本地实验记录...</section> : null}
-      {!isLoading && records.length === 0 ? (
+      {!isLoading && records.length === 0 && swarmRecords.length === 0 && assessmentRecords.length === 0 ? (
         <EmptyState icon={ClipboardList} title="暂无实验记录" description="完成一次基础飞行训练后，实验配置、成绩和遥测历史会自动保存在这里。" action={<Link to="/experiments/basic-flight">开始实验一</Link>} />
       ) : records.length > 0 ? (
         <section className={`${styles.panel} ${styles.tablePanel}`}>

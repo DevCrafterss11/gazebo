@@ -7,9 +7,12 @@
     "dev": "vite",
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",
+    "test": "esbuild tests/swarm.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/swarm.test.mjs && esbuild tests/assessment.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/assessment.test.mjs && esbuild tests/assessment-contract.test.ts --bundle --platform=node --format=esm --define:import.meta.env='{}' --external:axios --outfile=node_modules/.tmp/assessment-contract.test.mjs && node --test \"$PWD/node_modules/.tmp/swarm.test.mjs\" \"$PWD/node_modules/.tmp/assessment.test.mjs\" \"$PWD/node_modules/.tmp/assessment-contract.test.mjs\"",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.1",
     "axios": "^1.11.0",
     "echarts": "^6.0.0",
     "lucide-react": "^0.544.0",
@@ -17,11 +20,13 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.8.2",
+    "three": "^0.186.1",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.2",
     "typescript": "~5.8.3",
     "vite": "^7.1.4"

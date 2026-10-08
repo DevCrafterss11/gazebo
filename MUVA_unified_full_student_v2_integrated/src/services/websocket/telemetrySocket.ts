@@ -82,6 +82,7 @@ export class WebSocketTelemetryService implements TelemetrySocketService {
       case 'SNAPSHOT':
         return {
           ...metadata,
+          snapshotTimestamp: envelope.timestamp,
           position: { ...envelope.payload.position },
           attitude: { ...envelope.payload.attitude },
           speedMetersPerSecond: envelope.payload.velocity.groundSpeed,

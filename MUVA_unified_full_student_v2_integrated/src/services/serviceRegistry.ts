@@ -23,6 +23,10 @@ import { MockFlightService } from './mock/MockFlightService';
 import { MockMissionService } from './mock/MockMissionService';
 import { MockSceneService } from './mock/MockSceneService';
 import { MockTelemetryService } from './mock/MockTelemetryService';
+import { MockSwarmRuntime } from './mock/MockSwarmRuntime';
+import type { SwarmService } from './swarmContract';
+import { assessmentRuntime, type AssessmentRuntime } from './mock/MockAssessmentRuntime';
+import { MockDroneAdapter, RealMavlinkAdapter, assessmentSource, type AssessmentDroneAdapter } from './assessment/droneAdapter';
 
 export type DataSource = 'mock' | 'api';
 
@@ -46,6 +50,9 @@ export interface ServiceRegistry {
   missions: MissionService;
   scenes: SceneService;
   telemetry: TelemetryService;
+  swarm: SwarmService;
+  assessment: AssessmentRuntime;
+  assessmentAdapter: AssessmentDroneAdapter;
 }
 
 export const services: ServiceRegistry = dataSource === 'api'
@@ -59,6 +66,9 @@ export const services: ServiceRegistry = dataSource === 'api'
       missions: new ApiMissionService(),
       scenes: new ApiSceneService(),
       telemetry: new ApiTelemetryService(),
+      swarm: new MockSwarmRuntime(),
+      assessment: assessmentRuntime,
+      assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),
     }
   : {
       dataSource,
@@ -70,4 +80,7 @@ export const services: ServiceRegistry = dataSource === 'api'
       missions: new MockMissionService(),
       scenes: new MockSceneService(),
       telemetry: new MockTelemetryService(),
+      swarm: new MockSwarmRuntime(),
+      assessment: assessmentRuntime,
+      assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),
     };

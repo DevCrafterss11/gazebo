@@ -17,6 +17,7 @@
 
 # Locally downloaded system packages
 *.deb
+/muva1008.zip
 
 # Python environments and downloaded packages
 **/.venv/

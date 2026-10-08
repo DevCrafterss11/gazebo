@@ -13,6 +13,7 @@ export interface MavlinkTelemetryStatus {
 
 export interface TelemetrySample {
   timestamp: number;
+  snapshotTimestamp?: number;
   vehicleId?: string;
   sequence?: number;
   source?: TelemetrySource;

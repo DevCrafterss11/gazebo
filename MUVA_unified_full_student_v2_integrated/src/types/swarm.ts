@@ -1,0 +1,11 @@
+export type Point = [number, number];
+export type SwarmPhase = 'DRAFT' | 'PLANNED' | 'READY' | 'TAKING_OFF' | 'HOLDING' | 'RUNNING' | 'PAUSED' | 'RETURNING' | 'COMPLETED' | 'ABORTED' | 'FAILED';
+export type DronePhase = 'READY' | 'TAKING_OFF' | 'HOLDING' | 'RUNNING' | 'PAUSED' | 'RETURNING' | 'LANDED';
+export interface SwarmConfig { count: number; altitude: number; speed: number; spacing: number; safety: number; sceneId: string; simulationMode: 'mock'; worldFrame: 'ENU'; }
+export interface SwarmArea { polygon: { type: 'Polygon'; coordinates: Point[][] }; area: number; perimeter: number; boundingBox: [number, number, number, number]; coordinateSystem: 'WGS84'; }
+export interface SwarmMission { missionId: string; droneId: string; assignedArea: number; waypoints: Point[]; coverageSegments: [Point, Point][]; plannedDistance: number; estimatedDuration: number; assignedColor: string; taskStatus: 'PLANNED' | 'RUNNING' | 'COMPLETED' | 'INCOMPLETE'; }
+export interface SwarmDrone { droneId: string; displayName: string; modelType: 'Iris'; sysId: number; homePosition: Point; position: Point; targetAltitude: number; cruiseSpeed: number; altitude: number; speed: number; heading: number; battery: number; state: DronePhase; waypointIndex: number; progress: number; trajectory: Point[]; completedSegments: number; }
+export interface SwarmCheck { name: string; description: string; status: 'PENDING' | 'CHECKING' | 'PASSED' | 'FAILED'; reason?: string; suggestion?: string; }
+export interface SwarmSnapshot { status: SwarmPhase; drones: SwarmDrone[]; elapsed: number; events: string[]; coverage: number; interrupted?: boolean; }
+export interface SwarmResult { runId: string; completedAt: string; status: 'COMPLETED' | 'ABORTED'; score: number; coverage: number; elapsed: number; plannedDistance: number; actualDistance: number; feedback: string[]; events: string[]; trajectories: { droneId: string; points: Point[] }[]; config: SwarmConfig; area: SwarmArea | null; missions: SwarmMission[]; snapshot: SwarmSnapshot; }
+export interface SwarmRun { id: string; createdAt: string; config: SwarmConfig; area: SwarmArea | null; missions: SwarmMission[]; confirmed: boolean; checks: SwarmCheck[]; snapshot: SwarmSnapshot | null; step: number; result: SwarmResult | null; }
