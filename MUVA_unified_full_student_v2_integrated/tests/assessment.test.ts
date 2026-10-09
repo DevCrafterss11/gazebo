@@ -1,7 +1,44 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import './experiment3-exam.test';
 import { TrainingRuleEngine } from '../src/domain/assessment/TrainingRuleEngine';
-import { createRun, defaultConfig, parts, questions, tasks, type TaskResult } from '../src/domain/assessment/model';
+import { createRun, defaultConfig, parts, questions, scenes, tasks, type TaskResult } from '../src/domain/assessment/model';
+import { EXPERIMENT3_SCENES, getExperiment3Scene, restoreExperiment3Scene } from '../src/domain/assessment/experiment3Scenes';
+import { existsSync, readFileSync } from 'node:fs';
+
+test('experiment 3 provides four selectable scenes with distinct local satellite maps', () => {
+  assert.deepEqual(EXPERIMENT3_SCENES.map((scene) => scene.id), ['campus', 'city', 'mountain', 'airport']);
+  assert.equal(new Set(EXPERIMENT3_SCENES.map((scene) => scene.mapImage)).size, 4);
+  for (const scene of EXPERIMENT3_SCENES) {
+    assert.equal(scene.available, true);
+    assert.equal(getExperiment3Scene(scene.id), scene);
+    assert.match(scene.mapImage, new RegExp(`/experiment3/scenes/${scene.id}-satellite\\.jpg$`));
+    assert.equal(existsSync(`public${scene.previewImage}`), true);
+    const image = readFileSync(`public${scene.mapImage}`);
+    assert.equal(image.readUInt16BE(0), 0xffd8);
+    assert.ok(image.length > 20000, 'satellite image must not be a blank placeholder');
+    assert.ok(scene.name && scene.type && scene.description && scene.trainingGoal);
+  }
+});
+
+test('experiment 3 has no implicit campus selection or duplicate scene field', () => {
+  const run = createRun();
+  assert.equal(run.selectedSceneId, null);
+  assert.equal('scene' in run, false);
+  assert.equal(getExperiment3Scene(null), undefined);
+  assert.equal(getExperiment3Scene('unknown'), undefined);
+});
+
+test('experiment 3 restores the selected scene and migrates only its legacy scene field', () => {
+  for (const scene of EXPERIMENT3_SCENES) {
+    assert.equal(restoreExperiment3Scene({ selectedSceneId: scene.id }), scene.id);
+    assert.equal(restoreExperiment3Scene({ scene: scene.id }), scene.id);
+  }
+  assert.equal(restoreExperiment3Scene({ scene: 'runway' }), 'airport');
+  assert.equal(restoreExperiment3Scene({ selectedSceneId: 'city', scene: 'campus' }), 'city');
+  assert.equal(restoreExperiment3Scene({ selectedSceneId: null, scene: 'campus' }), null);
+  assert.equal(restoreExperiment3Scene({ selectedSceneId: 'unknown' }), null);
+});
 import { MockAssessmentRuntime } from '../src/services/mock/MockAssessmentRuntime';
 import { scoreRun, totalScore } from '../src/domain/assessment/ScoringEngine';
 import type { TelemetrySample } from '../src/types/telemetry';
@@ -27,6 +64,47 @@ test('directional position goal rejects equal-distance movement in opposite dire
   assert.equal(engine.evaluate(running('forward'), sample(now + 100, { north: -5 }), now + 100).status, 'RUNNING');
   assert.equal(engine.evaluate(running('forward'), sample(now + 200, { east: 5 }), now + 200).status, 'RUNNING');
   assert.equal(engine.evaluate(running('forward'), sample(now + 300, { north: 5 }), now + 300).status, 'PASSED');
+});
+test('campus goal uses the same east/north coordinates as the scene marker', () => {
+  const now = Date.now();
+  const campus = scenes.find((scene) => scene.id === 'campus')!;
+  const engine = new TrainingRuleEngine(defaultConfig, campus);
+  engine.start(sample(now));
+  assert.equal(engine.evaluate(running('target'), sample(now + 100, { north: 10, east: 0 }), now + 100).status, 'RUNNING');
+  assert.equal(engine.evaluate(running('target'), sample(now + 200, { north: -campus.targetPosition.z, east: campus.targetPosition.x }), now + 200).status, 'RUNNING');
+  assert.equal(engine.evaluate(running('target'), sample(now + 2300, { north: -campus.targetPosition.z, east: campus.targetPosition.x }), now + 2300).status, 'PASSED');
+});
+test('advanced difficulty tightens directional position tolerance', () => {
+  const now = Date.now();
+  const beginner = new TrainingRuleEngine(defaultConfig);
+  const advanced = new TrainingRuleEngine({ ...defaultConfig, difficulty: 'advanced' });
+  beginner.start(sample(now)); advanced.start(sample(now));
+  const nearTarget = sample(now + 100, { north: 4 });
+  assert.equal(beginner.evaluate(running('forward'), nearTarget, now + 100).status, 'PASSED');
+  assert.equal(advanced.evaluate(running('forward'), nearTarget, now + 100).status, 'RUNNING');
+});
+test('stable time ignores paused duration and reports why a target is not met', () => {
+  const now = Date.now();
+  const engine = new TrainingRuleEngine({ ...defaultConfig, hoverSeconds: 3 });
+  engine.start(sample(now)); engine.beginHover();
+  const first = engine.evaluate(running('hover'), sample(now + 100), now + 100);
+  assert.equal(first.stableSeconds, 0);
+  engine.pause(now + 1100);
+  assert.equal(engine.evaluate(first, sample(now + 9100), now + 9100).status, 'RUNNING');
+  engine.resume(now + 10100);
+  assert.equal(engine.evaluate(first, sample(now + 11100), now + 11100).status, 'RUNNING');
+  assert.equal(engine.evaluate(first, sample(now + 12100), now + 12100).status, 'PASSED');
+  const invalid = engine.evaluate(running('hover'), sample(now + 12200, { east: 5 }), now + 12200);
+  assert.match(invalid.feedback ?? '', /距离目标/);
+});
+test('composite task needs observable maneuver before stable control', () => {
+  const now = Date.now(); const engine = new TrainingRuleEngine(defaultConfig);
+  engine.start(sample(now)); engine.acceptCommand();
+  assert.equal(engine.evaluate(running('composite'), sample(now + 100), now + 100).status, 'RUNNING');
+  assert.equal(engine.evaluate(running('composite'), sample(now + 2200), now + 2200).status, 'RUNNING');
+  engine.evaluate(running('composite'), sample(now + 2300, { east: 3 }), now + 2300);
+  assert.equal(engine.evaluate(running('composite'), sample(now + 2400), now + 2400).status, 'RUNNING');
+  assert.equal(engine.evaluate(running('composite'), sample(now + 4600), now + 4600).status, 'PASSED');
 });
 test('RTL command acknowledgement is not a landing confirmation', () => {
   const now = Date.now(); const engine = new TrainingRuleEngine(defaultConfig); engine.start(sample(now)); engine.acceptCommand();
@@ -98,6 +176,60 @@ test('out-of-bounds command leaves flight target and motion unchanged', () => {
     mock.stop();
   } finally { globalThis.requestAnimationFrame = animation; globalThis.cancelAnimationFrame = cancel; }
 });
+test('pause freezes movement, stop clears telemetry and restart switches scene targets', () => {
+  const mock = new MockAssessmentRuntime();
+  const animation = globalThis.requestAnimationFrame;
+  const cancel = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => undefined;
+  try {
+    mock.start(defaultConfig, 'runway');
+    mock.command('arm'); mock.command('takeoff', 10);
+    mock.step(0.08);
+    mock.command('pause');
+    const paused = mock.snapshot();
+    for (let count = 0; count < 10; count++) mock.step(0.08);
+    assert.deepEqual(mock.snapshot().position, paused.position);
+    assert.equal(mock.telemetry().speedMetersPerSecond, 0);
+    mock.command('resume'); mock.step(0.08);
+    assert.ok(mock.snapshot().position.y > paused.position.y);
+    mock.stop();
+    assert.equal(mock.telemetry().timestamp, 0);
+    mock.start(defaultConfig, 'campus');
+    assert.deepEqual(mock.snapshot().homePosition, scenes.find((scene) => scene.id === 'campus')!.homePosition);
+    assert.equal(mock.snapshot().armed, false);
+  } finally { mock.stop(); globalThis.requestAnimationFrame = animation; globalThis.cancelAnimationFrame = cancel; }
+});
+test('wind shifts position deterministically and invalid flight values cannot corrupt state', () => {
+  const animation = globalThis.requestAnimationFrame;
+  const cancel = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => undefined;
+  const runway = new MockAssessmentRuntime();
+  const campus = new MockAssessmentRuntime();
+  try {
+    for (const [runtime, scene] of [[runway, 'runway'], [campus, 'campus']] as const) {
+      runtime.start(defaultConfig, scene);
+      runtime.command('arm'); runtime.command('takeoff', 10);
+      for (let count = 0; count < 80; count++) runtime.step(0.08);
+      runtime.command('forward', 5);
+      for (let count = 0; count < 25; count++) runtime.step(0.08);
+    }
+    assert.notEqual(campus.snapshot().position.x, runway.snapshot().position.x);
+    const before = campus.snapshot();
+    assert.throws(() => campus.command('waypoint', { x: Number.NaN, z: 0 }), /无效/);
+    assert.throws(() => campus.command('altitude', Number.NaN), /无效/);
+    assert.deepEqual(campus.snapshot(), before);
+  } finally { runway.stop(); campus.stop(); globalThis.requestAnimationFrame = animation; globalThis.cancelAnimationFrame = cancel; }
+});
+test('safety deductions reduce only the flight category', () => {
+  const run = createRun();
+  run.taskResults[0] = { taskId: 'arm', status: 'PASSED', attempts: 1 };
+  run.taskScores.arm = 2;
+  const clean = scoreRun(run).find((entry) => entry.ruleId === 'flight')!.actualScore;
+  run.evidence.push({ id: 'risk', runId: run.runId, timestamp: 1, type: 'SAFETY', message: '接近障碍物' });
+  assert.ok(scoreRun(run).find((entry) => entry.ruleId === 'flight')!.actualScore < clean);
+});
 test('Mock GPS and link failures are reflected in telemetry and recover deterministically', () => {
   const mock = new MockAssessmentRuntime();
   const animation = globalThis.requestAnimationFrame;
@@ -134,7 +266,7 @@ test('all ten tasks require their own telemetry goal', () => {
   runTask('forward', sample(now), [sample(now + 100, { north: 5 })]);
   runTask('lateral', sample(now), [sample(now + 100, { east: 5 })]);
   runTask('yaw', sample(now), [sample(now + 100, { attitude: { roll: 0, pitch: 0, yaw: 90 } })]);
-  runTask('target', sample(now, { north: 5 }), [sample(now + 100, { north: 10 })]);
-  runTask('composite', sample(now), [sample(now + 100), sample(now + 2200)], true);
+  runTask('target', sample(now, { north: 5 }), [sample(now + 100, { north: 10 }), sample(now + 2200, { north: 10 })]);
+  runTask('composite', sample(now), [sample(now + 50, { east: 3 }), sample(now + 100), sample(now + 2200)], true);
   runTask('rtl', sample(now), [sample(now + 100, { mode: 'RTL' }), sample(now + 200, { mode: 'LAND', armed: false, position: { latitude: 34, longitude: 108, altitude: 0 } })], true);
 });

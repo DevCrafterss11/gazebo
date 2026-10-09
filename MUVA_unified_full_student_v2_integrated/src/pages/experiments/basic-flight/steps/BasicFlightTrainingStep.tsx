@@ -27,17 +27,17 @@ export function BasicFlightTrainingStep() {
     // sessionId is an in-memory runtime value and is intentionally not part
     // of the persisted configuration. After a page refresh, the experiment
     // can still resume from its saved step and must keep processing telemetry.
-    if (!selectedDrone || !selectedScene) return;
+    if (!selectedDrone || !selectedScene || !configuration.homePosition) return;
     initializeTraining(
       configuration.flightParameters,
-      { latitude: selectedScene.latitude, longitude: selectedScene.longitude },
+      { latitude: configuration.homePosition.latitude, longitude: configuration.homePosition.longitude },
       selectedDrone.name,
       selectedScene.name,
       // Keep the training page open after all basic tasks are complete. The
       // user can run a custom route before explicitly opening the result.
       () => {},
     );
-  }, [configuration.flightParameters, connectTelemetry, initializeTraining, selectedDrone, selectedScene]);
+  }, [configuration.flightParameters, configuration.homePosition, connectTelemetry, initializeTraining, selectedDrone, selectedScene]);
 
   return (
     <div className={styles.page}>

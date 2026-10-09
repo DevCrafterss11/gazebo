@@ -3,36 +3,22 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { FlightFrame, SimulationSnapshot } from '../../../domain/assessment/model';
-import { scenes } from '../../../domain/assessment/model';
+import { getExperiment3Scene } from '../../../domain/assessment/experiment3Scenes';
 import { IrisDroneModel } from './IrisDroneModel';
-
+import sceneStyles from './Experiment3Scenes.module.css';
 type View = 'free' | 'top' | 'side' | 'follow';
 interface FlightCanvasProps {
   flight?: SimulationSnapshot;
   scene?: string | null;
   selectedPart?: string;
   onPart?: (id: string) => void;
-  demonstration?: 'roll' | 'pitch' | 'yaw' | null;
+  demonstration?: 'roll' | 'pitch' | 'yaw' | 'throttle' | null;
+  demonstrationPlaying?: boolean;
+  focusPart?: boolean;
   trajectory?: FlightFrame[];
   view?: View;
   cognition?: boolean;
   targetAltitude?: number;
-}
-function Ground({ scene }: { scene: string }) {
-  const config = scenes.find((item) => item.id === scene) ?? scenes[0]!;
-  return <group>
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}><planeGeometry args={[110,110]}/><meshStandardMaterial color={config.color} roughness={0.96}/></mesh>
-    <gridHelper args={[100, 50, '#1a9cb9', '#244863']} position={[0, 0, 0]}/>
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}><planeGeometry args={[12,72]}/><meshStandardMaterial color="#263443"/></mesh>
-    {[[-5.85,0],[5.85,0]].map(([x,z]) => <mesh key={x} rotation={[-Math.PI/2,0,0]} position={[x!,0.025,z!]}><planeGeometry args={[0.16,72]}/><meshBasicMaterial color="#d4e1e7"/></mesh>)}
-    {Array.from({ length: 11 }, (_, index) => <mesh key={index} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, index * 6 - 30]}><planeGeometry args={[0.28, 2.5]}/><meshBasicMaterial color="#b9d9ef"/></mesh>)}
-    {Array.from({ length: 10 },(_,index) => <group key={index} position={[index%2 ? -18 : 18,0,index*8-36]}><mesh position={[0,1.3,0]}><boxGeometry args={[2.4,2.6,3.5]}/><meshStandardMaterial color={index%2 ? '#47667a' : '#537b71'}/></mesh><mesh position={[0,2.65,0]}><boxGeometry args={[2.6,0.15,3.7]}/><meshStandardMaterial color="#12324b"/></mesh></group>)}
-    <mesh rotation={[-Math.PI/2,0,0]} position={[0,0.038,0]}><planeGeometry args={[config.size,config.size]}/><meshBasicMaterial color="#43d5a5" opacity={0.035} transparent depthWrite={false}/></mesh>
-    {[-1,1].flatMap((side) => [<mesh key={`x${side}`} rotation={[-Math.PI/2,0,0]} position={[side*config.size/2,0.045,0]}><planeGeometry args={[0.18,config.size]}/><meshBasicMaterial color="#38eeba"/></mesh>,<mesh key={`z${side}`} rotation={[-Math.PI/2,0,0]} position={[0,0.045,side*config.size/2]}><planeGeometry args={[config.size,0.18]}/><meshBasicMaterial color="#38eeba"/></mesh>])}
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}><ringGeometry args={[1.5, 1.6, 40]}/><meshBasicMaterial color="#52f1b6" side={THREE.DoubleSide}/></mesh>
-    {scene !== 'runway' && Array.from({ length: scene === 'mountain' ? 10 : 7 }, (_, index) => <mesh key={index} position={[index % 2 ? -11 : 11, scene === 'mountain' ? 2 + index % 4 : 2 + index % 3, index * 7 - 22]}><boxGeometry args={[3.5, scene === 'mountain' ? 4 + index % 4 : 4 + index % 6, 3.5]}/><meshStandardMaterial color={scene === 'mountain' ? '#697660' : '#475f74'}/></mesh>)}
-    <mesh position={[0, 0.06, -10]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.6,0.75,32]}/><meshBasicMaterial color="#ffab65" side={THREE.DoubleSide}/></mesh>
-  </group>;
 }
 function Track({ points }: { points: FlightFrame[] }) {
   if (points.length < 2) return null;
@@ -41,7 +27,7 @@ function Track({ points }: { points: FlightFrame[] }) {
   const positions = new Float32Array(sampled.flatMap((point) => [point.x,point.y,point.z]));
   return <line><bufferGeometry><bufferAttribute attach="attributes-position" args={[positions, 3]}/></bufferGeometry><lineBasicMaterial color="#23dfff" linewidth={2}/></line>;
 }
-function Camera({ view, flight, cognition }: { view: View; flight?: SimulationSnapshot; cognition?: boolean }) {
+function Camera({ view, flight, cognition, focusPart, selectedPart }: { view: View; flight?: SimulationSnapshot; cognition?: boolean; focusPart?: boolean; selectedPart?: string }) {
   const { camera, controls } = useThree();
   const previous = useRef(new THREE.Vector3(flight?.position.x ?? 0, flight?.position.y ?? 0, flight?.position.z ?? 0));
   useFrame(() => {
@@ -55,28 +41,35 @@ function Camera({ view, flight, cognition }: { view: View; flight?: SimulationSn
   useEffect(() => {
     const focus: [number, number, number] = cognition ? [0, 1, 0] : [flight?.position.x ?? 0, flight?.position.y ?? 0, flight?.position.z ?? 0];
     previous.current.set(...focus);
-    if (view === 'top' || cognition) camera.position.set(focus[0], focus[1] + (cognition ? 17.5 : 32), focus[2] + 0.01);
+    if (view === 'top' || cognition && !focusPart) camera.position.set(focus[0], focus[1] + (cognition ? 17.5 : 95), focus[2] + 0.01);
+    else if (cognition && focusPart) camera.position.set(2.5, 2.5, 4);
     else if (view === 'side') camera.position.set(focus[0] + 24, focus[1] + 8, focus[2]);
     else if (view === 'follow') camera.position.set(focus[0] + 9, focus[1] + 8, focus[2] + 13);
-    else camera.position.set(cognition ? 3.3 : 11, cognition ? 2.8 : 10, cognition ? 5 : 15);
+    else camera.position.set(cognition ? 3.3 : 7, cognition ? 2.8 : 6, cognition ? 5 : 10);
     camera.lookAt(...focus);
     if (controls && 'target' in controls) (controls as THREE.EventDispatcher & { target: THREE.Vector3 }).target.set(...focus);
-  }, [view, cognition, camera, controls]);
+  }, [view, cognition, camera, controls, focusPart, selectedPart]);
   return null;
 }
-export function FlightCanvas({ flight, scene = 'runway', cognition = false, selectedPart, onPart, demonstration, trajectory = [], view = 'free', targetAltitude }: FlightCanvasProps) {
-  return <Canvas shadows camera={{ position: cognition ? [5, 3.3, 5.5] : [11, 10, 15], fov: cognition ? 43 : 48 }} style={{ height: '100%', width: '100%', background: 'radial-gradient(#164163, #061a33)' }}>
-    <color attach="background" args={['#061a33']}/><ambientLight intensity={1.7}/><directionalLight position={[9, 18, 8]} intensity={2.5} castShadow/><pointLight position={[-4, 4, -2]} intensity={2} color="#18b9ef"/>
+export function FlightCanvas({ flight, scene, cognition = false, selectedPart, onPart, demonstration, demonstrationPlaying, focusPart, trajectory = [], view = 'free', targetAltitude }: FlightCanvasProps) {
+  const selectedScene = cognition ? undefined : getExperiment3Scene(scene);
+  return <div className={sceneStyles.viewport} data-scene-id={selectedScene?.id}>
+    {selectedScene && <><img className={sceneStyles.map} src={selectedScene.mapImage} alt={`${selectedScene.name}卫星地图`}/><div className={sceneStyles.mapShade}/></>}
+    <Canvas shadows gl={{ alpha: true }} aria-label="可旋转、缩放的 3D Iris 四旋翼" camera={{ position: cognition ? [5, 3.3, 5.5] : [7, 6, 10], fov: cognition ? 43 : 48 }} style={{ height: '100%', width: '100%' }}>
+    {cognition && <color attach="background" args={['#061a33']}/>}
+    <ambientLight intensity={1.7}/><directionalLight position={[9, 18, 8]} intensity={2.5} castShadow/><pointLight position={[-4, 4, -2]} intensity={2} color="#18b9ef"/>
     <Suspense fallback={null}>
-      {!cognition && <Ground scene={scene ?? 'runway'}/>}
-      <IrisDroneModel flight={flight} selectedPart={selectedPart} onPart={onPart} demonstration={demonstration} cognition={cognition}/>
+      <group name="experiment3-iris"><IrisDroneModel flight={flight} selectedPart={selectedPart} onPart={onPart} demonstration={demonstration} demonstrationPlaying={demonstrationPlaying} cognition={cognition}/></group>
       {!cognition && <Track points={trajectory}/>}
+      {!cognition && trajectory.filter((frame) => frame.event).map((frame) => <mesh key={`${frame.timestamp}-${frame.event}`} position={[frame.x, Math.max(0.2, frame.y), frame.z]}><sphereGeometry args={[0.35, 10, 10]}/><meshBasicMaterial color="#ff6969"/></mesh>)}
       {targetAltitude !== undefined && <group position={cognition ? [1.9, 0, 0] : [3.5, 0, -1]}>
         <mesh position={[0, cognition ? (0.5 + targetAltitude / 24) : targetAltitude / 2, 0]}><cylinderGeometry args={[0.015, 0.015, cognition ? (1 + targetAltitude / 12) : targetAltitude, 8]}/><meshBasicMaterial color="#6deee6"/></mesh>
         <mesh position={[0, cognition ? (1 + targetAltitude / 12) : targetAltitude, 0]}><sphereGeometry args={[0.14, 12, 12]}/><meshBasicMaterial color="#6deee6"/></mesh>
       </group>}
     </Suspense>
-    <OrbitControls makeDefault enableDamping minDistance={cognition ? 8 : 5} maxDistance={cognition ? 40 : 95} maxPolarAngle={cognition ? Math.PI * 0.8 : Math.PI / 2.05}/>
-    <Camera view={view} flight={flight} cognition={cognition}/>
-  </Canvas>;
+    <OrbitControls makeDefault enableDamping minDistance={cognition ? 8 : 5} maxDistance={cognition ? 40 : 160} maxPolarAngle={cognition ? Math.PI * 0.8 : Math.PI / 2.05}/>
+    <Camera view={view} flight={flight} cognition={cognition} focusPart={focusPart} selectedPart={selectedPart}/>
+    </Canvas>
+    {selectedScene && <span className={sceneStyles.credit}>Sentinel-2 © EOX / Copernicus 2016 · CC BY 4.0</span>}
+  </div>;
 }

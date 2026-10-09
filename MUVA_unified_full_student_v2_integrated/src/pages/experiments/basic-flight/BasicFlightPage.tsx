@@ -2,7 +2,10 @@ import { useEffect } from 'react';
 
 import { useExperimentStore } from '../../../stores/experimentStore';
 import { BasicFlightTrainingStep } from './steps/BasicFlightTrainingStep';
-import { DroneSelectionStep } from './steps/DroneSelectionStep';
+import { ParameterConfigurationStep } from './steps/ParameterConfigurationStep';
+import { TrainingSceneStep } from './steps/TrainingSceneStep';
+import { FlightReadinessStep } from './steps/FlightReadinessStep';
+import { SystemCognitionStep } from './steps/SystemCognitionStep';
 import { ResultStep } from './steps/ResultStep';
 import { SetupStep } from './steps/SetupStep';
 
@@ -20,10 +23,22 @@ export function BasicFlightPage() {
   }
 
   if (currentStep === 1) {
-    return <DroneSelectionStep />;
+    return <SystemCognitionStep />;
   }
 
-  if (currentStep >= 2 && currentStep <= 6) {
+  if (currentStep === 2) {
+    return <ParameterConfigurationStep />;
+  }
+
+  if (currentStep === 3) {
+    return <TrainingSceneStep />;
+  }
+
+  if (currentStep === 5 || currentStep === 6) {
+    return <FlightReadinessStep stepId={currentStep} />;
+  }
+
+  if (currentStep === 4) {
     return <SetupStep stepId={currentStep} />;
   }
 

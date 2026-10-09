@@ -1,5 +1,6 @@
 import type { ExperimentConfiguration, FlightParameters, PreflightChecklistItem } from '../types/configuration';
 import type { PreflightCheckContext } from '../services/contracts';
+import { defaultFlightControllerConfig } from '../mocks/configuration';
 
 export const validateFlightParameters = (parameters: FlightParameters): string | null => {
   if (!Number.isFinite(parameters.takeoffAltitude) || parameters.takeoffAltitude < 1 || parameters.takeoffAltitude > 50) return '起飞高度应为 1–50 m';
@@ -10,6 +11,12 @@ export const validateFlightParameters = (parameters: FlightParameters): string |
   if (parameters.rtlAltitude < parameters.takeoffAltitude || parameters.rtlAltitude > parameters.maxAltitude) return 'RTL 高度应介于起飞高度和最大高度之间';
   if (!Number.isFinite(parameters.hoverDuration) || parameters.hoverDuration < 1 || parameters.hoverDuration > 120) return '悬停时间应为 1–120 秒';
   return null;
+};
+
+export const validateIrisBasicFlightConfig = (configuration: ExperimentConfiguration): string | null => {
+  if (configuration.selectedDroneId !== 'iris-quadrotor-01') return '请先完成 Iris 四旋翼系统认知';
+  if (Object.entries(defaultFlightControllerConfig).some(([key, value]) => configuration.flightController[key as keyof typeof configuration.flightController] !== value)) return '请恢复 Iris 四旋翼教学构型';
+  return validateFlightParameters(configuration.flightParameters);
 };
 
 export const getPreflightFailureReason = (

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { Html } from '@react-three/drei';
+import { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -11,20 +10,21 @@ interface Props {
   cognition?: boolean;
   selectedPart?: string;
   onPart?: (id: string) => void;
-  demonstration?: 'roll' | 'pitch' | 'yaw' | null;
+  demonstration?: 'roll' | 'pitch' | 'yaw' | 'throttle' | null;
+  demonstrationPlaying?: boolean;
 }
 
 type Point = [number, number, number];
 
 const motors: [number, number][] = [[-0.43, -0.43], [0.43, -0.43], [0.43, 0.43], [-0.43, 0.43]];
 const highlightColor = '#ffd064';
-const partMarkers: Record<string, { label: string; position: Point; radius: number }> = {
-  frame: { label: '机架', position: [0, 0.18, 0], radius: 0.23 },
-  controller: { label: '飞控', position: [0, 0.22, 0], radius: 0.14 },
-  gps: { label: 'GPS', position: [0, 0.43, -0.24], radius: 0.09 },
-  imu: { label: 'IMU', position: [-0.11, 0.2, -0.08], radius: 0.09 },
-  battery: { label: '电池', position: [0, -0.16, 0.035], radius: 0.16 },
-  link: { label: '通信模块', position: [0.17, -0.12, 0.06], radius: 0.12 },
+const partMarkers: Record<string, { position: Point; radius: number }> = {
+  frame: { position: [0, 0.18, 0], radius: 0.23 },
+  controller: { position: [0, 0.22, 0], radius: 0.14 },
+  gps: { position: [0, 0.43, -0.24], radius: 0.09 },
+  imu: { position: [-0.11, 0.2, -0.08], radius: 0.09 },
+  battery: { position: [0, -0.16, 0.035], radius: 0.16 },
+  link: { position: [0.17, -0.12, 0.06], radius: 0.12 },
 };
 const bladeShape = new THREE.Shape();
 bladeShape.moveTo(0, -0.016);
@@ -43,23 +43,26 @@ function Strut({ from, to, radius, color, highlighted = false }: { from: Point; 
   </mesh>;
 }
 
-export function IrisDroneModel({ flight, cognition = false, selectedPart, onPart, demonstration }: Props) {
+export function IrisDroneModel({ flight, cognition = false, selectedPart, onPart, demonstration, demonstrationPlaying = true }: Props) {
+  const body = useRef<THREE.Group>(null);
   const attitude = useRef<THREE.Group>(null);
   const rotors = useRef<Array<THREE.Group | null>>([]);
-  const started = useRef(0);
+  const phase = useRef(0);
   const [activeRotor, setActiveRotor] = useState(0);
-  useEffect(() => { started.current = performance.now(); }, [demonstration]);
 
   useFrame((_, delta) => {
+    if (!demonstration) phase.current = 0;
+    else if (demonstrationPlaying) phase.current += delta;
+    const pulse = demonstration ? Math.sin(phase.current * 1.15) : 0;
+    if (body.current && cognition) body.current.position.y = 1.5 + (demonstration === 'throttle' ? 0.25 * pulse : 0);
     if (attitude.current) {
-      const pulse = demonstration ? Math.sin(Math.min((performance.now() - started.current) / 900, Math.PI)) : 0;
       const [pitch, yaw, roll] = toThreeEuler(flight?.attitude ?? { pitch: 0, yaw: 0, roll: 0 });
       attitude.current.rotation.set(cognition && demonstration === 'pitch' ? 0.24 * pulse : pitch,
         cognition && demonstration === 'yaw' ? -0.5 * pulse : yaw,
         cognition && demonstration === 'roll' ? -0.3 * pulse : roll);
     }
     rotors.current.forEach((rotor, index) => {
-      if (rotor) rotor.rotation.y += delta * (index % 2 ? 1 : -1) * (cognition ? 50 : 50);
+      if (rotor) rotor.rotation.y += delta * (index % 2 ? 1 : -1) * (cognition ? demonstration && demonstrationPlaying ? 34 + (demonstration === 'throttle' ? 28 : index % 2 ? 12 : 0) : 0 : flight?.armed ? flight.airborne ? 55 : 20 : 0);
     });
   });
 
@@ -73,7 +76,7 @@ export function IrisDroneModel({ flight, cognition = false, selectedPart, onPart
     ? { label: selectedPart === 'motor' ? '电机' : '螺旋桨', position: [motors[activeRotor]![0], 0.23, motors[activeRotor]![1]] as Point, radius: 0.12 }
     : selectedPart ? partMarkers[selectedPart] : undefined;
 
-  return <group position={cognition ? [0, 1.5, 0] : [flight?.position.x ?? 0, (flight?.position.y ?? 0) + 1.02, flight?.position.z ?? 0]}>
+  return <group ref={body} position={cognition ? [0, 1.5, 0] : [flight?.position.x ?? 0, (flight?.position.y ?? 0) + 1.02, flight?.position.z ?? 0]}>
     <group ref={attitude} scale={cognition ? 6 : 2.6}>
       <group onClick={select('frame')}>
         <mesh position={[0, 0.03, 0]}><cylinderGeometry args={[0.225, 0.225, 0.038, 8]}/><meshStandardMaterial color={frameSelected ? highlightColor : '#202c35'} emissive={frameSelected ? '#ef8800' : '#000000'} emissiveIntensity={frameSelected ? 0.8 : 0} metalness={0.65} roughness={0.32}/></mesh>
@@ -141,9 +144,6 @@ export function IrisDroneModel({ flight, cognition = false, selectedPart, onPart
           <meshBasicMaterial color={highlightColor} side={THREE.DoubleSide} depthTest={false} depthWrite={false}/>
         </mesh>
         <mesh raycast={() => {}}><sphereGeometry args={[0.022, 12, 12]}/><meshBasicMaterial color={highlightColor} depthTest={false} depthWrite={false}/></mesh>
-        <Html position={[0, 0.16, 0]} center distanceFactor={7} style={{ pointerEvents: 'none' }}>
-          <span style={{ display: 'block', padding: '5px 9px', color: '#fff7d7', background: '#3a260be8', border: '1px solid #ffd064', borderRadius: 5, boxShadow: '0 0 14px #ffb44399', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 700 }}>{marker.label}</span>
-        </Html>
       </group>}
     </group>
   </group>;

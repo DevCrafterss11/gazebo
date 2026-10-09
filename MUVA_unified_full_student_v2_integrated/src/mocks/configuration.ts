@@ -46,7 +46,7 @@ export const healthySensorDetails: Record<SensorCheckItem['id'], string[]> = {
 export const mockScenes: TrainingScene[] = [
   {
     id: 'campus',
-    name: '校园环境',
+    name: '校园训练场',
     description: '包含教学楼、操场和开阔起降区的基础教学场景。',
     latitude: 34.1251589,
     longitude: 108.8289653,
@@ -54,6 +54,21 @@ export const mockScenes: TrainingScene[] = [
     weather: '晴朗 · 22°C',
     wind: '东北风 1.2 m/s',
     image: 'campus',
+  },
+  {
+    id: 'city', name: '城市训练场', description: '通过密集街区影像理解视距、遮挡与安全飞行限制。',
+    latitude: 37.7702, longitude: -122.415, altitude: 15,
+    weather: '晴朗 · 20°C', wind: '西风 2.4 m/s', image: 'city',
+  },
+  {
+    id: 'mountain', name: '山地训练场', description: '观察山地环境，练习高度约束与返航决策。',
+    latitude: 37.75, longitude: -119.58, altitude: 1220,
+    weather: '多云 · 15°C', wind: '山谷风 2.8 m/s', image: 'mountain',
+  },
+  {
+    id: 'airport', name: '机场训练场', description: '仅用于模拟开放区域起降，真实机场及管制空域不得擅自飞行。',
+    latitude: 37.618, longitude: -122.375, altitude: 4,
+    weather: '晴朗 · 19°C', wind: '西风 1.6 m/s', image: 'airport',
   },
   {
     id: 'training-field',

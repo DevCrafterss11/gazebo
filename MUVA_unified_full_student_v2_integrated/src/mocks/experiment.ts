@@ -1,9 +1,9 @@
 import type { ExperimentDefinition, TrainingScore } from '../types/experiment';
 
 const stepTitles = [
-  '无人机选择',
+  '系统组成认知',
   '实验参数配置',
-  '场景配置',
+  '训练场景选择',
   '启动仿真环境',
   '飞控与传感器检查',
   '起飞前检查',

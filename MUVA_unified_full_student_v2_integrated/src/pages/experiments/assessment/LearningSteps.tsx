@@ -1,19 +1,26 @@
 import { useState } from 'react';
-import { parts, questions, scenes, tasks, type AssessmentConfig } from '../../../domain/assessment/model';
+import { Check } from 'lucide-react';
+import { partLearning, parts, questions, tasks, type AssessmentConfig } from '../../../domain/assessment/model';
+import { EXPERIMENT3_SCENES, getExperiment3Scene } from '../../../domain/assessment/experiment3Scenes';
 import { useAssessmentStore, validConfig } from '../../../stores/assessmentStore';
 import { FlightCanvas } from './FlightCanvas';
+import { Experiment3Map } from './Experiment3Map';
 import styles from './AssessmentPage.module.css';
+import sceneStyles from './Experiment3Scenes.module.css';
 
 export function CognitionStep() {
   const { run, learn, answerQuiz, submitQuiz } = useAssessmentStore();
   const [selected, select] = useState('frame');
-  const [motion, setMotion] = useState<'roll' | 'pitch' | 'yaw' | null>(null);
+  const [motion, setMotion] = useState<'roll' | 'pitch' | 'yaw' | 'throttle' | null>(null);
+  const [playing, setPlaying] = useState(true);
+  const [focusPart, setFocusPart] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
   const choose = (id: string) => { select(id); learn(id); };
   const part = parts.find((item) => item.id === selected) ?? parts[0]!;
-  return <div className={`${styles.columns} ${styles.cognitionGrid}`}><section className={styles.panel}><h2>✈ 系统组成认知</h2><div className={`${styles.canvas} ${styles.cognitionCanvas}`}><FlightCanvas cognition selectedPart={selected} onPart={choose} demonstration={motion}/><span className={styles.modelLabel}>{part.name} · 点击模型零件探索</span></div><div className={styles.partGrid}>{parts.map((item) => <button className={selected === item.id ? styles.selected : ''} onClick={() => choose(item.id)} key={item.id}>{run.learnedParts.includes(item.id) ? '✓ ' : '○ '}{item.name}</button>)}</div><p>已学习 {run.learnedParts.length} / {parts.length} · 点击机体/部件学习，当前：{part.name}</p></section>
-    <section className={`${styles.panel} ${styles.mainPanel}`}><h2>控制链路与飞行原理</h2><div className={styles.controlFlow}>{['学生操作 / 目标指令','飞控控制器','电机输出','无人机姿态与运动','传感器测量 IMU / GPS','状态估计 EKF → 反馈控制'].map((name, index) => <div className={styles.flowNode} key={name}><b>{String(index + 1).padStart(2,'0')}</b>{name}</div>)}</div><h3>四旋翼基本运动原理</h3><div className={styles.motionGrid}>{(['roll','pitch','yaw'] as const).map((axis) => <button key={axis} className={motion === axis ? styles.selected : ''} onClick={() => { setMotion(null); requestAnimationFrame(() => setMotion(axis)); }}><strong>{axis.toUpperCase()}</strong><small>{({roll:'绕机头前后轴横滚',pitch:'绕左右轴俯仰',yaw:'绕竖直轴改变航向'})[axis]}</small></button>)}<button onClick={() => setMotion(null)}><strong>THROTTLE</strong><small>升力与高度控制</small></button></div><div className={styles.flow}>选中部件：{part.name} · {part.role}</div></section>
-    <section className={styles.panel}><h2>学习目标与知识自测</h2><div className={styles.learningGoals}><p>① 认识八个核心部件及用途</p><p>② 理解飞控—电调—电机的闭环控制</p><p>③ 掌握 Roll / Pitch / Yaw / Throttle</p></div><h3>{part.name} · 功能与工作原理</h3><p>{part.role}</p><p>{part.principle}</p><button className={styles.primary} onClick={() => setQuizOpen(!quizOpen)}>{quizOpen ? '收起自测' : '开始知识自测'}</button>{quizOpen && <div className={styles.list}>{questions.map((question) => <label key={question.id}>{question.question}<select value={run.quizAnswers[question.id] ?? ''} onChange={(event) => answerQuiz(question.id, event.target.value)}><option value="">请选择</option>{question.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>{run.quizSubmitted && <small>{run.quizAnswers[question.id] === question.answer ? '正确' : '错误'} · {question.explanation}</small>}</label>)}<button onClick={submitQuiz}>提交自测</button>{run.quizSubmitted && <strong>知识得分：{run.scoreBreakdown.find((item) => item.ruleId === 'knowledge')?.actualScore}/10</strong>}</div>}</section></div>;
+  const learning = partLearning[part.id]!;
+  return <div className={`${styles.columns} ${styles.cognitionGrid}`}><section className={styles.panel}><h2>✈ 系统组成认知</h2><div className={`${styles.canvas} ${styles.cognitionCanvas}`}><FlightCanvas cognition selectedPart={selected} onPart={choose} demonstration={motion} demonstrationPlaying={playing} focusPart={focusPart}/><span className={styles.modelLabel}>{part.name} · 点击模型零件探索</span></div><div className={styles.toolbar}><button onClick={() => setFocusPart(!focusPart)}>{focusPart ? '返回整体' : '局部放大'}</button><button onClick={() => { setFocusPart(false); setMotion(null); setPlaying(true); }}>重置视角</button></div><div className={styles.partGrid}>{parts.map((item) => <button className={selected === item.id ? styles.selected : ''} onClick={() => choose(item.id)} key={item.id}>{run.learnedParts.includes(item.id) ? '✓ ' : '○ '}{item.name}</button>)}</div><p>已学习 {run.learnedParts.length} / {parts.length} · 点击机体/部件学习，当前：{part.name}</p></section>
+    <section className={`${styles.panel} ${styles.mainPanel}`}><h2>控制链路与飞行原理</h2><div className={styles.controlFlow}>{['学生操作 / 目标指令','飞控控制器','电机输出','无人机姿态与运动','传感器测量 IMU / GPS','状态估计 EKF → 反馈控制'].map((name, index) => <div className={styles.flowNode} key={name}><b>{String(index + 1).padStart(2,'0')}</b>{name}</div>)}</div><h3>四旋翼基本运动原理</h3><div className={styles.motionGrid}>{(['roll','pitch','yaw','throttle'] as const).map((axis) => <button key={axis} className={motion === axis ? styles.selected : ''} onClick={() => { setMotion(axis); setPlaying(true); }}><strong>{axis.toUpperCase()}</strong><small>{({roll:'绕机头前后轴横滚',pitch:'绕左右轴俯仰',yaw:'绕竖直轴改变航向',throttle:'四电机同时增速，上升'})[axis]}</small></button>)}</div><div className={styles.toolbar}><button disabled={!motion} onClick={() => setPlaying(!playing)}>{playing ? '暂停动画' : '继续动画'}</button><button onClick={() => { setMotion(null); setPlaying(true); }}>重置动画</button></div><div className={styles.flow}>运动参考：{motion === 'roll' ? '绕机头前后轴，左右电机推力差' : motion === 'pitch' ? '绕左右轴，前后电机推力差' : motion === 'yaw' ? '绕竖直轴，对角旋翼扭矩差' : motion === 'throttle' ? '沿竖直方向上升，四电机共同增速' : '选择姿态轴查看推力变化'} · {playing ? '演示中' : '已暂停'}</div></section>
+    <section className={styles.panel}><h2>学习目标与知识自测</h2><p>形成性学习检查，不计入最终综合成绩。</p><div className={styles.learningGoals}><p>① 认识八个核心部件及用途</p><p>② 理解飞控—电调—电机的闭环控制</p><p>③ 掌握 Roll / Pitch / Yaw / Throttle</p></div><h3>{part.name} · 功能与工作原理</h3><p>{part.role}</p><p>{part.principle}</p><p>与其他部件：{learning.connection}</p><p>对控制的影响：{learning.control}</p><p>常见异常：{learning.fault}</p><button className={styles.primary} onClick={() => setQuizOpen(!quizOpen)}>{quizOpen ? '收起自测' : '开始知识自测'}</button>{quizOpen && <div className={styles.list}>{questions.map((question) => <label key={question.id}>{question.question}<select value={run.quizAnswers[question.id] ?? ''} onChange={(event) => answerQuiz(question.id, event.target.value)}><option value="">请选择</option>{question.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>{run.quizSubmitted && <small>{run.quizAnswers[question.id] === question.answer ? '正确' : '错误'} · {question.explanation}</small>}</label>)}<button onClick={submitQuiz}>提交自测</button>{run.quizSubmitted && <strong>知识得分：{run.scoreBreakdown.find((item) => item.ruleId === 'knowledge')?.actualScore}/10</strong>}</div>}</section></div>;
 }
 export function ConfigurationStep() {
   const { run, configure } = useAssessmentStore();
@@ -25,16 +32,64 @@ export function ConfigurationStep() {
     <section className={styles.panel}><h2>模式说明</h2><div className={styles.metric}><span>Guided 引导</span><strong>位置目标与教学航点</strong></div><div className={styles.metric}><span>Loiter 定点</span><strong>保持当前位置</strong></div><div className={styles.metric}><span>RTL 返航</span><strong>飞回 Home 并降落</strong></div><p>飞行训练需要 GUIDED。高度 2–30m，速度 0–5m/s，悬停 3–60s；修改后旧任务和评分失效。</p><strong className={validConfig(form) ? styles.success : styles.warning}>{validConfig(form) ? '✓ 参数范围有效' : '⚠ 参数超出允许范围'}</strong><h3>任务目标摘要</h3><div className={styles.list}>{tasks.slice(0, 5).map((task, index) => <div className={styles.metric} key={task.taskId}><span>{index + 1}. {task.goal}</span><strong>{task.taskId === 'hover' ? `${form.hoverSeconds}s @ ${form.altitude}m` : task.taskId === 'takeoff' ? `${form.altitude}m` : '待训练'}</strong></div>)}</div></section></div>;
 }
 export function SceneStep() {
-  const { run, chooseScene, confirmScene } = useAssessmentStore();
-  const scene = scenes.find((item) => item.id === run.scene) ?? scenes[0]!;
-  return <div className={styles.columns}><section className={styles.panel}><h2>前端模拟场景</h2><div className={styles.list}>{scenes.map((item) => <button key={item.id} disabled={!item.available} className={scene.id === item.id && run.scene ? styles.selected : ''} onClick={() => chooseScene(item.id)}><strong>{item.name}</strong><small>{item.detail}</small></button>)}</div><button className={styles.primary} onClick={confirmScene}>已阅读风险 · 确认场景</button></section>
-    <section className={`${styles.panel} ${styles.mainPanel}`}><h2>{scene.name} · 俯视安全区域</h2><div className={styles.canvas}><FlightCanvas scene={scene.id} view="top"/><div className={styles.sceneLegend}>● Home (0,0,0)　　◇ 模拟目标点<br/>绿色线条：{scene.size}m × {scene.size}m 安全边界</div></div><div className={styles.flow}>三维模拟区域 · 鼠标可旋转缩放 · 与真实 Gazebo World 不等同</div></section>
-    <section className={styles.panel}><h2>训练条件与风险</h2><p>{scene.detail}</p>{[['安全区域', `${scene.trainingArea.width}m × ${scene.trainingArea.length}m`], ['模拟风速', `${scene.wind}m/s`], ['风险等级', scene.risk], ['推荐难度', scene.difficulty], ['Home 点', `(${scene.homePosition.x}, ${scene.homePosition.y}, ${scene.homePosition.z})`], ['目标点', `(${scene.targetPosition.x}, ${scene.targetPosition.z})`], ['障碍物', `${scene.obstacles.length} 处`]].map(([label, value]) => <div className={styles.metric} key={label}><span>{label}</span><strong>{value}</strong></div>)}<p>{run.sceneConfirmed ? '✓ 场景已确认' : '请阅读风险并确认。仅供前端教学模拟。'}</p></section></div>;
+  const { run, chooseScene, confirmScene, startupBusy } = useAssessmentStore();
+  const scene = getExperiment3Scene(run.selectedSceneId);
+  const locked = run.environment !== 'STOPPED' || startupBusy;
+  return <div className={sceneStyles.sceneGrid}>
+    <section className={styles.panel}>
+      <h2>选择训练场景</h2>
+      <div className={sceneStyles.cards} role="radiogroup" aria-label="实验三训练场景">
+        {EXPERIMENT3_SCENES.map((item) => <button type="button" role="radio" aria-checked={run.selectedSceneId === item.id} aria-label={item.name} key={item.id} disabled={locked} className={sceneStyles.card} onClick={() => chooseScene(item.id)}>
+          <img src={item.previewImage} alt={`${item.name}卫星地图预览`}/>
+          <span className={sceneStyles.cardBody}><strong>{item.name}</strong><span className={sceneStyles.sceneType}>{item.type}</span><small>{item.description}</small></span>
+          {run.selectedSceneId === item.id && <span className={sceneStyles.selectedBadge}><Check size={13}/>已选择</span>}
+        </button>)}
+      </div>
+      <button className={styles.primary} disabled={!scene || locked} onClick={confirmScene}>确认当前场景</button>
+      <p>{locked ? '请先停止模拟环境，再更换场景。' : run.sceneConfirmed ? '✓ 场景已确认' : '请选择一个场景，确认后进入下一阶段。'}</p>
+    </section>
+    <section className={`${styles.panel} ${styles.mainPanel}`}>
+      <h2>{scene ? `${scene.name} · 场景预览` : '场景预览 · 请选择训练场景'}</h2>
+      <div className={styles.canvas}><Experiment3Map scene={run.selectedSceneId}/></div>
+      <div className={styles.flow}>2D 卫星地图 + 四旋翼俯视标记 · Home / Target / 安全边界</div>
+    </section>
+    <section className={styles.panel}>
+      <h2>当前场景</h2>
+      {scene ? <><div className={styles.metric}><span>场景名称</span><strong>{scene.name}</strong></div><div className={styles.metric}><span>场景类型</span><strong>{scene.type}</strong></div><h3>训练目标</h3><p className={sceneStyles.sceneType}>{scene.trainingGoal}</p><p className={sceneStyles.sceneType}>{scene.description}</p><div className={styles.metric}><span>模拟安全区域</span><strong>{scene.trainingArea.width}m × {scene.trainingArea.length}m</strong></div><div className={styles.metric}><span>风险等级</span><strong>{scene.risk}</strong></div></> : <p>尚未选择场景。</p>}
+      <p>卫星影像仅供环境认知，不作为定位、测绘或真实飞行依据。</p>
+    </section>
+  </div>;
 }
 export function StartupStep() {
-  const { run, start, stop, startupBusy, setStartupFailure, flight } = useAssessmentStore();
+  const { run, start, stop, startupBusy, setStartupFailure, flight, goTo } = useAssessmentStore();
+  const scene = getExperiment3Scene(run.selectedSceneId);
   const phases = ['加载前端场景资源', '初始化 Mock 飞控', '建立模拟数据通信', '启动遥测生成器', '校验初始状态'];
-  return <><div className={styles.columns}><section className={styles.panel}><h2>Mock 启动任务</h2>{phases.map((phase, index) => <div key={phase} className={styles.metric}><span>{index + 1}. {phase}</span><strong>{run.simulationLog.length > index ? '✓' : '等待'}</strong></div>)}<label>开发教学：故障注入<select value={run.simulationFailure ?? ''} disabled={startupBusy} onChange={(event) => setStartupFailure(event.target.value ? event.target.value as 'scene' | 'link' | 'telemetry' : undefined)}><option value="">正常启动</option><option value="scene">场景加载失败</option><option value="link">通信初始化失败</option><option value="telemetry">遥测生成器失败</option></select></label><div className={styles.toolbar}><button className={styles.primary} disabled={startupBusy || run.environment === 'READY'} onClick={() => void start()}>启动 / 重试</button><button disabled={startupBusy || run.environment === 'STOPPED'} onClick={() => void stop()}>停止 / 重置</button></div></section>
-    <section className={`${styles.panel} ${styles.mainPanel}`}><h2>环境启动状态 · {run.environment}</h2><div className={styles.canvas}><FlightCanvas flight={flight} scene={run.scene}/></div><progress value={run.simulationLog.length} max={5} style={{ width: '100%' }}/></section>
-    <section className={styles.panel}><h2>运行环境状态</h2><div className={styles.statusGrid}>{[['前端场景',run.simulationLog.length > 0 ? '已加载' : '等待'],['Mock 飞控',run.simulationLog.length > 1 ? '已初始化' : '等待'],['模拟数据通信',run.simulationLog.length > 2 ? '已建立' : '等待'],['遥测生成器',run.environment === 'READY' ? '在线' : '等待']].map(([name,value]) => <div className={styles.metric} key={name}><span>{name}</span><strong>{value}</strong></div>)}</div><h3>当前环境</h3><div className={styles.metric}><span>场景</span>{run.scene}</div><div className={styles.metric}><span>机型</span>Iris 四旋翼 · 教学模拟</div><div className={styles.metric}><span>飞行状态</span>{run.environment === 'READY' ? '地面 · 未解锁' : '未就绪'}</div>{run.environmentError && <p className={styles.error}>{run.environmentError}</p>}</section></div><section className={styles.panel}><h2>系统事件日志</h2><div className={styles.scroll}>{run.simulationLog.map((item,index) => <p key={index}>{item}</p>)}</div></section></>;
+  return <>
+    <div className={sceneStyles.sceneGrid}>
+      <section className={styles.panel}>
+        <h2>启动前配置确认</h2>
+        <div className={styles.metric}><span>无人机</span><strong>Iris 四旋翼</strong></div>
+        <div className={styles.metric}><span>场景</span><strong>{scene?.name ?? '未选择场景'}</strong></div>
+        <div className={styles.metric}><span>场景类型</span><strong>{scene?.type ?? '—'}</strong></div>
+        {scene && <><h3>训练目标</h3><p>{scene.trainingGoal}</p><p>{scene.description}</p></>}
+        <button disabled={startupBusy} onClick={() => goTo(2)}>返回场景选择</button>
+        <p>此处仅确认已有配置，更换场景请返回上一步。</p>
+      </section>
+      <section className={`${styles.panel} ${styles.mainPanel}`}>
+        <h2>场景预览 · {scene?.name ?? '未选择场景'}</h2>
+        <div className={styles.canvas}><Experiment3Map scene={run.selectedSceneId} flight={flight}/></div>
+        <div className={styles.flow}>2D 卫星地图 + 四旋翼俯视标记 · {run.environment === 'READY' ? '模拟环境已就绪' : '确认场景后启动教学模拟'}</div>
+      </section>
+      <section className={styles.panel}>
+        <h2>Mock 启动任务</h2>
+        {phases.map((phase, index) => <div key={phase} className={styles.metric}><span>{index + 1}. {phase}</span><strong>{run.simulationLog.length > index ? '✓' : '等待'}</strong></div>)}
+        <label>开发教学：故障注入<select value={run.simulationFailure ?? ''} disabled={startupBusy} onChange={(event) => setStartupFailure(event.target.value ? event.target.value as 'scene' | 'link' | 'telemetry' : undefined)}><option value="">正常启动</option><option value="scene">场景加载失败</option><option value="link">通信初始化失败</option><option value="telemetry">遥测生成器失败</option></select></label>
+        <div className={styles.toolbar}><button className={styles.primary} disabled={startupBusy || run.environment === 'READY' || !scene || !run.sceneConfirmed} onClick={() => void start()}>启动 / 重试</button><button disabled={startupBusy || run.environment === 'STOPPED'} onClick={() => void stop()}>停止 / 重置</button></div>
+        <progress max={phases.length} value={run.simulationLog.length} aria-label="模拟环境启动进度"/>
+        <p>环境状态：{run.environment}</p>
+        {run.environmentError && <p className={styles.error}>{run.environmentError}</p>}
+      </section>
+    </div>
+    <section className={styles.panel}><h2>系统事件日志</h2><div className={styles.scroll}>{run.simulationLog.map((item, index) => <p key={index}>{item}</p>)}</div></section>
+  </>;
 }

@@ -36,3 +36,4 @@
 @media(max-width:900px){.trainingGrid{grid-template-columns:1fr}.trainingGrid>.panel:last-child{grid-column:auto}.resultGrid>.panel:nth-child(n){grid-column:span 12}}
 .page{height:100%;min-height:0;overflow-y:auto;padding-bottom:90px}
 .footer{position:fixed;bottom:10px;left:calc(var(--sidebar-width) + 28px);right:28px;z-index:2}
+.manualControls{display:flex;align-items:center;flex-wrap:wrap;gap:5px;border-left:1px solid #225e87;padding-left:8px}.manualControls label{max-width:80px}.manualControls input{max-width:78px}

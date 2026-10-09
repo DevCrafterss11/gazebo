@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-import { validateFlightParameters } from '../domain/experimentValidation';
-import { createDefaultConfiguration, createPreflightChecklist, createUncheckedSensors } from '../mocks/configuration';
+import { validateFlightParameters, validateIrisBasicFlightConfig } from '../domain/experimentValidation';
+import { createDefaultConfiguration, createPreflightChecklist, createUncheckedSensors, mockScenes } from '../mocks/configuration';
 import { mockExperiment, mockTrainingScore } from '../mocks/experiment';
 import { services } from '../services/serviceRegistry';
 import type { PersistedExperimentState, PreflightCheckContext } from '../services/contracts';
@@ -81,8 +81,8 @@ export { validateFlightParameters } from '../domain/experimentValidation';
 const getValidationMessage = (state: ExperimentState): string | null => {
   const environment = useEnvironmentStore.getState();
   switch (state.experiment.currentStep) {
-    case 1: return state.configuration.selectedDroneId ? null : '请先选择无人机型号';
-    case 2: return validateFlightParameters(state.configuration.flightParameters);
+    case 1: return state.selectedDrone?.id === 'iris-quadrotor-01' ? null : '请先完成 Iris 四旋翼系统认知';
+    case 2: return validateIrisBasicFlightConfig(state.configuration);
     case 3:
       if (!state.configuration.selectedSceneId) return '请选择训练场景';
       return isHomePositionValid(state.configuration.homePosition) ? null : '请设置有效的 Home latitude、longitude 和 altitude';
@@ -106,6 +106,12 @@ const persistedState = (state: ExperimentState, currentStep: number, completedSt
 });
 
 let initialized = false;
+
+const experiment1SceneIds = ['campus', 'city', 'mountain', 'airport'];
+const withExperiment1Scenes = (scenes: TrainingScene[]): TrainingScene[] => [
+  ...scenes,
+  ...mockScenes.filter((scene) => experiment1SceneIds.includes(scene.id) && !scenes.some((available) => available.id === scene.id)),
+];
 
 export const useExperimentStore = create<ExperimentState>((set, get) => {
   const invalidateRuntime = (fromStep: number): void => {
@@ -160,9 +166,10 @@ export const useExperimentStore = create<ExperimentState>((set, get) => {
       useEnvironmentStore.getState().initialize();
       useFlightStore.getState().initialize();
       try {
-        const [droneModels, scenes, persisted] = await Promise.all([
+        const [droneModels, availableScenes, persisted] = await Promise.all([
           services.drones.getDroneModels(), services.scenes.getScenes(), services.experiments.loadConfiguration(),
         ]);
+        const scenes = withExperiment1Scenes(availableScenes);
         if (!persisted) {
           set({ droneModels, scenes });
           return;
@@ -234,9 +241,9 @@ export const useExperimentStore = create<ExperimentState>((set, get) => {
       const state = get();
       const { selectedDrone, selectedScene } = state;
       const home = state.configuration.homePosition;
-      const parameterError = validateFlightParameters(state.configuration.flightParameters);
-      if (!selectedDrone || !selectedScene || !isHomePositionValid(home) || !home || parameterError) {
-        set({ validationMessage: parameterError ?? '无人机、场景或 Home Position 配置不完整' });
+      const configurationError = validateIrisBasicFlightConfig(state.configuration);
+      if (selectedDrone?.id !== 'iris-quadrotor-01' || !selectedScene || !isHomePositionValid(home) || !home || configurationError) {
+        set({ validationMessage: configurationError ?? '无人机、场景或 Home Position 配置不完整' });
         return;
       }
       const session = await services.experiments.createExperiment({
