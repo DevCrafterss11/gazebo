@@ -3,8 +3,8 @@ import type { PreflightCheckContext } from '../services/contracts';
 import { defaultFlightControllerConfig } from '../mocks/configuration';
 
 export const validateFlightParameters = (parameters: FlightParameters): string | null => {
-  if (!Number.isFinite(parameters.takeoffAltitude) || parameters.takeoffAltitude < 1 || parameters.takeoffAltitude > 50) return '起飞高度应为 1–50 m';
-  if (!Number.isFinite(parameters.maxAltitude) || parameters.maxAltitude < 1 || parameters.maxAltitude > 500) return '最大高度应为 1–500 m';
+  if (!Number.isFinite(parameters.takeoffAltitude) || parameters.takeoffAltitude < 2 || parameters.takeoffAltitude > 50) return '起飞高度应为 2–50 m';
+  if (!Number.isFinite(parameters.maxAltitude) || parameters.maxAltitude < 2 || parameters.maxAltitude > 120) return '最大高度应为 2–120 m';
   if (parameters.takeoffAltitude > parameters.maxAltitude) return '起飞高度不能超过最大高度';
   if (!Number.isFinite(parameters.maxSpeed) || parameters.maxSpeed < 0.5 || parameters.maxSpeed > 20) return '最大速度应为 0.5–20 m/s';
   if (!Number.isFinite(parameters.rtlAltitude)) return '请输入有效的 RTL 高度';

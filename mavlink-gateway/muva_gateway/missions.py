@@ -156,6 +156,20 @@ class MissionService:
                 raise InvalidCommandError("TAKEOFF, RTL, and LAND may only appear at mission boundaries")
         return built
 
+    def clear(self) -> None:
+        with self._operation():
+            self._ensure_online()
+            target_system, target_component = self.state.target
+            generations = self.state.protocol_generations(("MISSION_ACK",))
+            self._record_tx("MISSION_CLEAR_ALL", f"clear all mission items target={target_system}/{target_component}")
+            self.transport.send(lambda connection: connection.mav.mission_clear_all_send(target_system, target_component))
+            event = self._wait_protocol(("MISSION_ACK",), generations, time.monotonic() + self.settings.command_timeout)
+            result = int(event[1].type)
+            if result != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                raise CommandRejectedError(f"Mission clear rejected: {self._mission_result_name(result)}")
+            self.state.clear_mission()
+            self._clear_verification()
+
     def upload(self, raw_items: list[dict[str, Any]], verify: bool = True) -> dict[str, Any]:
         items = self.build_items(raw_items)
         with self._operation():

@@ -1,0 +1,37 @@
+.workspace { min-height: 675px; }
+.workspace > aside:first-child > section:first-child { flex-shrink: 0; }
+.workspace .summary > div:nth-child(2) { overflow-y: auto; }
+.parameters { margin: 0; display: grid; gap: 0; }
+.parameters > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #195076; font-size: 11px; }
+.parameters dt { color: #a9c8df; }
+.parameters dd { margin: 0; color: #e2f4ff; text-align: right; }
+.caption { margin: 9px 0; color: #8fb6d2; font-size: 10px; line-height: 1.7; overflow-wrap: anywhere; }
+.fleet { display: grid; gap: 8px; }
+.droneCard { display: grid; gap: 3px; width: 100%; padding: 6px; border: 1px solid #19557a; border-radius: 5px; background: #072941; color: #a9c8df; text-align: left; cursor: pointer; }
+.droneCard:hover, .selected { border-color: #21baff; background: #08385a; }
+.droneTitle { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.droneTitle > span { margin-left: auto; color: #a9c8df; font-size: 10px; }
+.droneCard small { margin: 0; font-size: 10px; line-height: 1.3; }
+.droneMetrics { display: grid; grid-template-columns: 1fr auto; gap: 5px; font-size: 10px; }
+.telemetry { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; }
+.telemetry > span { display: inline-flex; align-items: center; gap: 4px; }
+.checks { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.checks li { display: flex; justify-content: space-between; align-items: start; gap: 6px; font-size: 11px; }
+.checks small { color: #9bbbd2; max-width: 52%; text-align: right; font-size: 10px; }
+.success { color: #3ee7b1; }
+.failure { color: #ff7582; }
+.operations { grid-column: 1 / -1; padding: 10px 14px; border: 1px solid #138cbe; border-radius: 7px; background: linear-gradient(90deg, #07325a, #041e39); }
+.workflow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 0 0 9px; margin: 0; list-style: none; border-bottom: 1px solid #195076; }
+.workflow li { display: flex; align-items: center; justify-content: center; gap: 7px; color: #668ca8; font-size: 11px; }
+.workflow li > span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #315571; border-radius: 50%; }
+.workflow .completed { color: #5edfff; }
+.completed > span { border-color: #27baf0 !important; background: #095579; }
+.workflow [aria-current] { font-weight: 700; }
+.actionRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 9px; }
+.actionRow p { margin: 0; color: #c8e2f7; font-size: 11px; line-height: 1.7; }
+.actionRow small { color: #8fb6d2; font-size: 10px; }
+.buttons { display: flex; gap: 8px; }
+.buttons button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 12px; background: #0a3459; border: 1px solid #248bc0; border-radius: 5px; color: #e8f7ff; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.buttons button:disabled { opacity: .45; cursor: not-allowed; }
+.buttons .primary { background: linear-gradient(180deg, #04b6ff, #0088f3 50%, #0560dd); border-color: #19c9ff; color: #fff; }
+@media (max-width: 1500px) { .parameters > div { font-size: 10px; } .droneMetrics { font-size: 9px; } .actionRow { flex-wrap: wrap; } .buttons { margin-left: auto; } }

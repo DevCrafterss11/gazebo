@@ -21,7 +21,7 @@ interface FlightState {
   hold: () => Promise<void>;
   ascend: () => Promise<void>;
   descend: () => Promise<void>;
-  move: (direction: MoveDirection) => Promise<void>;
+  move: (direction: MoveDirection, meters?: number) => Promise<void>;
   clearError: () => void;
   setDisconnected: () => void;
   reset: () => void;
@@ -158,11 +158,14 @@ export const useFlightStore = create<FlightState>((set) => {
     hold: () => execute('HOLD', () => services.flight.hold()),
     ascend: () => execute('ASCEND', () => services.flight.ascend()),
     descend: () => execute('DESCEND', () => services.flight.descend()),
-    move: (direction) => {
+    move: (direction, meters) => {
       const commandMap: Record<MoveDirection, () => Promise<void>> = {
         forward: () => services.flight.moveForward(), backward: () => services.flight.moveBackward(), left: () => services.flight.moveLeft(), right: () => services.flight.moveRight(),
         up: () => services.flight.ascend(), down: () => services.flight.descend(), 'yaw-left': () => services.flight.yawLeft(), 'yaw-right': () => services.flight.yawRight(),
       };
+      if (meters !== undefined && direction !== 'yaw-left' && direction !== 'yaw-right') {
+        return execute(direction, () => services.flight.move(direction, meters));
+      }
       return execute(direction, commandMap[direction]);
     },
     clearError: () => set({ commandError: null }),

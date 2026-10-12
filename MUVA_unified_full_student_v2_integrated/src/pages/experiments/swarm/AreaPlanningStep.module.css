@@ -1,0 +1,89 @@
+.console { display: grid; grid-template-columns: minmax(205px, 1fr) minmax(0, 3fr) minmax(240px, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 10px; height: calc(100dvh - var(--top-header-height) - 174px); min-height: 690px; color: var(--color-text-primary); }
+.left, .right { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+.card, .mapPanel { border-color: #0a9cdb; background: linear-gradient(135deg, #062747, #031a31); }
+.card { flex-shrink: 0; }
+.card > header, .mapPanel > header { height: 43px; padding: 0 12px; background: linear-gradient(90deg, #08375e, #041e35); border-bottom: 1px solid #0a5c88; }
+.card > header > div > span, .mapPanel > header > div > span { font-size: 14px; }
+.card > header svg, .mapPanel > header svg { color: #0cc8ff; }
+.card > div { height: auto; padding: 10px 11px; }
+.fields { display: grid; gap: 9px; }
+.fields > label { display: grid; grid-template-columns: minmax(68px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 7px; font-size: 12px; color: #b1d1e6; }
+.input, .readonly, .fields select { width: 100%; min-width: 0; min-height: 33px; padding: 4px 9px; border: 1px solid #1a5b83; border-radius: 4px; background: #082d49; color: #e0f0fc; }
+.fields select { font-size: 11px; }
+.input { display: flex; align-items: center; gap: 3px; }
+.input input { min-width: 0; width: 100%; color: #e6f6ff; background: transparent; border: 0; outline: none; font-variant-numeric: tabular-nums; }
+.input small { font-size: 11px; color: #94bdd5; }
+.input:focus-within { border-color: #22c4ff; box-shadow: 0 0 0 2px #0ab9f522; }
+.readonly { display: flex; align-items: center; font-size: 11px; }
+.caption { margin: 9px 0 0; font-size: 10px; line-height: 1.7; color: #85aec8; }
+.tips { flex: 1; min-height: 205px; }
+.tips ol { padding: 0; margin: 0; display: grid; gap: 15px; list-style: none; }
+.tips li { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; line-height: 1.8; color: #d8edfa; }
+.tips li > span { display: grid; place-items: center; flex: 0 0 21px; height: 21px; border: 1px solid #2585c1; border-radius: 50%; background: #083f6f; color: #82dfff; font-size: 12px; }
+.tips li small { display: block; margin-top: 3px; color: #88b3cc; font-size: 10px; }
+.example, .generate, .operations button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; border: 1px solid #197bb0; border-radius: 5px; color: #e5f4ff; background: linear-gradient(#073451, #04233c); font-size: 12px; cursor: pointer; }
+.example { width: 100%; height: 31px; margin-top: 16px; }
+.example:disabled, .generate:disabled, .operations button:disabled { opacity: .4; cursor: not-allowed; }
+.mapPanel { min-width: 0; min-height: 0; }
+.mapPanel > div { height: calc(100% - 43px); padding: 0; overflow: hidden; }
+.mapHeading { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #96c0d5; white-space: nowrap; }
+.mapHeading i { display: block; width: 4px; height: 4px; background: #23c8ff; border-radius: 50%; }
+.counter { color: #6ddaff; font-size: 11px; }
+.fleet { flex: 1 1 auto; min-height: 0; }
+.fleet > div { height: calc(100% - 43px); overflow: auto; scrollbar-width: thin; scrollbar-color: #136393 #03172c; }
+.droneList { display: grid; gap: 7px; }
+.droneCard { display: flex; align-items: flex-start; gap: 8px; padding: 8px; min-height: 80px; width: 100%; border: 1px solid #16557c; border-left: 3px solid var(--uav-color); border-radius: 4px; color: #b9d5e8; background: linear-gradient(120deg, #06324f, #041d32); text-align: left; cursor: pointer; }
+.droneCard:disabled { cursor: default; opacity: .7; }
+.droneCard:hover:not(:disabled), .selectedDrone { border-color: var(--uav-color); box-shadow: inset 0 0 12px #08a9ff22; }
+.droneIcon { flex-shrink: 0; margin-top: 12px; color: var(--uav-color); }
+.droneDetails { display: grid; gap: 4px; min-width: 0; width: 100%; }
+.droneTitle { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.droneTitle strong { color: var(--uav-color); font: 700 12px ui-monospace, monospace; white-space: nowrap; }
+.battery { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; white-space: nowrap; }
+.battery svg { color: #45e6b6; }
+.badge { border: 1px solid #1b7e6e; border-radius: 3px; padding: 2px 5px; background: #005b4929; color: #45e6b6; white-space: nowrap; font-size: 10px; }
+.droneTelemetry { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; font-size: 10px; }
+.droneTelemetry span { display: flex; align-items: center; gap: 4px; }
+.droneTelemetry svg { color: #45e6b6; }
+.droneDetails small { font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.info { margin: 0; font-size: 11px; }
+.info > div { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; padding: 4px 0; border-bottom: 1px solid #134764; line-height: 1.3; }
+.info > div:first-child { padding-top: 0; }
+.info > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.info dt { color: #9bbdd4; white-space: nowrap; }
+.info dd { margin: 0; text-align: right; color: #e3f1fb; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.info .green { color: #3ee7b1; }
+.info .yellow { color: #ffb547; }
+.routeCounts { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; margin-top: 8px; font-size: 10px; }
+.generate { width: 100%; height: 32px; margin-top: 9px; color: #7adfff; border-color: #1672a2; }
+.operationBar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 77px; padding: 10px 14px; border: 1px solid #0c9ed8; border-radius: 5px; background: linear-gradient(110deg, #053353, #031b32); }
+.current { display: flex; align-items: center; gap: 13px; }
+.current > svg { color: #1cc4ff; }
+.current strong { display: block; font-size: 13px; }
+.current strong b { margin-left: 13px; color: #75dfff; }
+.current p { margin: 5px 0 0; font-size: 11px; color: #b5d1e6; }
+.current .noFlyNotice { max-width: 650px; color: #ffcd78; font-weight: 600; }
+.current small { display: block; margin-top: 4px; color: #78a6c2; font-size: 10px; }
+.operations { display: flex; align-items: center; gap: 9px; }
+.operations button { min-width: 126px; height: 42px; padding: 0 15px; }
+.operations .primary { min-width: 218px; border-color: #39d9ff; background: linear-gradient(#08bdff, #0871ed); box-shadow: 0 0 12px #00aaff55, inset 0 1px 0 #a2edff77; font-weight: 600; }
+.console button:focus-visible, .fields select:focus-visible { outline: 2px solid #75dfff; outline-offset: 2px; }
+.console button:hover:not(:disabled) { filter: brightness(1.15); }
+@media (min-width: 1750px) { .console { grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr) minmax(260px, 1fr); } .fields { gap: 13px; } .input, .readonly, .fields select { min-height: 37px; } .droneCard { min-height: 105px; padding: 12px 9px; } .droneDetails { gap: 8px; } .droneTitle strong { font-size: 13px; } .info > div { padding: 9px 0; } .tips ol { gap: 20px; } }
+@media (max-width: 1500px) { .console { height: calc(100dvh - var(--top-header-height) - 154px); min-height: 650px; grid-template-columns: minmax(185px, 1fr) minmax(0, 3fr) minmax(220px, 1fr); gap: 7px; } .left, .right { gap: 7px; } .card > header, .mapPanel > header { height: 37px; padding: 0 9px; } .card > header > div > span, .mapPanel > header > div > span { font-size: 12px; letter-spacing: 0; } .card > header svg { width: 17px; } .card > div { padding: 9px; } .mapPanel > div { height: calc(100% - 37px); padding: 0; } .fleet > div { height: calc(100% - 37px); } .fields { gap: 7px; } .fields > label { font-size: 11px; grid-template-columns: 64px minmax(0, 1fr); gap: 5px; } .input, .readonly, .fields select { min-height: 30px; padding: 4px 7px; } .droneCard { padding: 7px 6px; gap: 5px; min-height: 86px; } .droneIcon { width: 22px; } .droneDetails { gap: 4px; } .info > div { padding: 5px 0; } .operationBar { padding: 9px 11px; } .operations button { min-width: 105px; padding: 0 10px; font-size: 11px; } .operations .primary { min-width: 194px; } }
+@media (max-width: 1150px) { .console { min-width: 870px; grid-template-columns: 185px minmax(390px, 1fr) 220px; } .operationBar { gap: 9px; } .current { gap: 7px; } .current small { display: none; } }
+.right { display: grid; grid-template-rows: minmax(280px, 1fr) auto auto; }
+.right .card > div { padding: 8px 10px; }
+.right .droneCard { min-height: 78px; padding: 7px 6px; }
+.right .droneDetails { gap: 4px; }
+.right .droneTelemetry, .right .droneDetails small { line-height: 1.3; }
+.right .info > div { padding: 4px 0; }
+.right .info > div:first-child { padding-top: 0; }
+.right .info > div:last-child { padding-bottom: 0; }
+.zoneTags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.zoneTags button { border: 1px solid #8b3d52; border-radius: 3px; background: #60253344; color: #ff9d9d; padding: 2px 5px; font-size: 9px; }
+.tips > div { height: calc(100% - 43px); overflow: auto; scrollbar-width: thin; scrollbar-color: #136393 #03172c; }
+@media (max-width: 1500px) { .fields { gap: 5px; } .input, .readonly, .fields select { min-height: 28px; } .input input { font-size: 12px; } .right .droneCard { min-height: 66px; } .fleet .caption { display: none; } .tips > div { height: calc(100% - 37px); } .tips ol { gap: 9px; } .tips li, .tips li small { line-height: 1.5; } .tips .example { margin-top: 10px; } }
+.right .droneTitle { line-height: 1.2; }
+@media (max-width: 1500px) { .right { grid-template-rows: minmax(276px, 1fr) auto auto; } .right .droneCard { padding: 4px 6px; } .right .info > div { padding: 2px 0; } .right .badge { padding: 2px 4px; } }
+@media (max-width: 1500px) { .console { min-height: 700px; } .right .card > div { padding: 7px 8px; } .right .info { font-size: 10px; } .right .caption { line-height: 1.4; margin-top: 7px; } }

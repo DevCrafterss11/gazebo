@@ -2,6 +2,16 @@
 
 将 ArduPilot MAVLink 转换为前端可用的 HTTP 命令接口和 WebSocket 遥测流。
 
+实验二使用单独的 `muva_gateway.swarm_app`：在仓库根目录运行 `./start_experiment2.sh`，前端只给实验二选用 `ApiSwarmService`；独立网关监听 `127.0.0.1:8002`，以 TCP 分别连接 2–6 架原生 ArduCopter `quad` SITL（默认端口 15760、15780 等），不启动 Gazebo，也不占用实验一飞控、网关或浏览器进度。后端逐机校验 GPS/EKF、上传并回读完整 MAVLink 任务，以 GUIDED 指令调度并行覆盖及逐机返航，通过 `/ws/swarm` 回传真实飞控位置。初始化成功后，若图形桌面已安装 `xterm`，自动打开每架无人机专属的**只读指令流水**，窗口固定使用 UTF-8 与 `Noto Sans Mono CJK SC` 中文等宽字体：网关实际控制通道发起的模式、解锁、起飞、任务上传和位置目标（TX），飞控原始 `COMMAND_ACK`、`MISSION_ACK`、`STATUSTEXT`（RX），以及心跳、遥测和任务回读确认后的完成记录（DONE）；顶部显示实时模式、高度、位置、电量和进度。ACK 只代表飞控接收，不冒充动作完成。各机独立写入 `uav-N/commands.jsonl` 和 `uav-N/flight-state.json`，无需再从另一个 MAVLink 端口旁路猜测控制指令。关闭窗口不影响任务，重新开始实验会先确认飞控在线、上锁且已降落，再通过会话安全关闭旧机群；失败则保留旧进度，不会强行结束飞控。窗口启动日志写入 `uav-N/monitor.log`，原始飞控日志在 `uav-N/sitl.log`；设置 `MUVA_SWARM_MONITOR_TERMINALS=0` 可关闭弹窗。服务重启后会话不会跨进程恢复。`./stop_experiment2.sh` 会拒绝在飞行中关闭飞控。
+
+需要**实际飞行验证双机完整链路**时，在 `mavlink-gateway` 目录运行：
+
+```bash
+MUVA_RUN_SWARM_SITL_E2E=1 PYTHONPATH=.packages:. python3 tests/swarm_sitl_e2e.py
+```
+
+测试使用临时状态目录、独立端口 16960/16980，不连接已有实验；飞行中请勿强制终止脚本。低配机器建议关闭实验一 Gazebo 后再运行；测试脚本不会自动关闭实验一。
+
 ## 运行
 
 标准 MAVProxy 输出方式：
@@ -50,6 +60,10 @@ Web 前端集成的只读回传控制台使用 UDP 14553。独立终端监控器
 完整状态；它不会发送解锁、模式或飞行控制命令。使用 `--passive` 可关闭订阅请求。
 
 ## 接口
+
+实验一的真实 Session、按 `progressId` 保存的进度、按 Session 保存的评分/报告、环境、传感器预检和版本化飞行接口详见前端 `docs/experiment1-api.md`；全部接口细节以运行中的 `/docs` 为准。评分和实验进度持久化于 `MUVA_PLATFORM_DATA` 指定的文件（默认用户状态目录），不是浏览器 localStorage。
+
+实验四安全对抗使用隔离的 `/api/v1/security/runs` REST 生命周期和 `WS /ws/security/{runId}` 通道；契约、检测/评分规则、Mock/API 差异与限制详见前端 `docs/experiment4-v1.md`。实验安全样本使用独立的 `security.telemetry.v1` envelope，不进入普通车辆遥测通道。考核结果虽由 Gateway 计算和保存，但当前服务没有身份认证/授权，不适用于正式防篡改考试。
 
 - `GET /api/health`：网关和飞控连接健康
 - `GET /api/vehicle`：最新车辆状态快照

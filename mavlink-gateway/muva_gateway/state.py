@@ -102,6 +102,9 @@ class VehicleState:
             "longitude": 0.0,
             "linkQuality": -1,
             "throttle": 0,
+            "sensorsPresent": 0,
+            "sensorsEnabled": 0,
+            "sensorsHealth": 0,
         }
 
     @property
@@ -117,6 +120,7 @@ class VehicleState:
                     self._last_heartbeat = 0.0
                     self._vehicle.update(systemId=0, componentId=0, mode="UNKNOWN", armed=False)
                     self._mission.update(verified=False, verifiedAt=None, missionHash=None)
+                    self._telemetry.update(sensorsPresent=0, sensorsEnabled=0, sensorsHealth=0)
                 self._touch()
 
     def is_online(self) -> bool:
@@ -216,6 +220,11 @@ class VehicleState:
                     throttle=int(message.throttle),
                 )
             elif message_type == "SYS_STATUS":
+                self._telemetry.update(
+                    sensorsPresent=int(getattr(message, "onboard_control_sensors_present", 0)),
+                    sensorsEnabled=int(getattr(message, "onboard_control_sensors_enabled", 0)),
+                    sensorsHealth=int(getattr(message, "onboard_control_sensors_health", 0)),
+                )
                 if message.voltage_battery != 65535:
                     self._telemetry["voltage"] = message.voltage_battery / 1000.0
                 if message.current_battery != -1:
@@ -394,6 +403,13 @@ class VehicleState:
                 self._mission["state"] = state
                 self._mission_generation += 1
                 self._touch()
+
+    def clear_mission(self) -> None:
+        with self._condition:
+            self._mission.update(current=0, total=0, lastReached=None, distanceToWaypoint=0,
+                                 state="idle", verified=False, verifiedAt=None, missionHash=None)
+            self._mission_generation += 1
+            self._touch()
 
     def set_mission_verification(
         self,

@@ -22,6 +22,7 @@
   background-size: 36px 36px;
 }
 
+
 .mapCanvas :global(.maplibregl-canvas) {
   outline: none;
 }
@@ -65,6 +66,68 @@
 
 .mapControls button:last-child { border-bottom: 0; }
 .mapControls button:hover { color: #fff; background: rgb(40 160 198 / 32%); }
+.mapControls button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.mapStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sceneCoordinateNotice {
+  position: absolute;
+  z-index: 5;
+  left: 12px;
+  bottom: 54px;
+  padding: 5px 8px;
+  border: 1px solid rgb(102 190 211 / 38%);
+  border-radius: 4px;
+  color: #c8f2ff;
+  background: rgb(2 24 36 / 88%);
+  font-size: 10px;
+}
+
+.mapFailure button {
+  margin-left: 6px;
+  padding: 2px 5px;
+  border: 1px solid rgb(102 190 211 / 38%);
+  border-radius: 3px;
+  color: #c8f2ff;
+  background: #07324c;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.mapFailure {
+  position: absolute;
+  z-index: 5;
+  left: 12px;
+  right: 12px;
+  bottom: 96px;
+  padding: 7px 9px;
+  border-radius: 4px;
+  color: #ffe174;
+  background: rgb(2 24 36 / 88%);
+  font-size: 10px;
+}
+
+.configuredHomeMarker {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid #ffe174;
+  border-radius: 50%;
+  color: #ffe174;
+  background: #07324c;
+  font-weight: 700;
+}
+
+.vehicleMapMarker[hidden], .configuredHomeMarker[hidden] { display: none; }
 
 .vehicleMapMarker {
   z-index: 2;
@@ -73,20 +136,17 @@
   border: 1px solid rgb(120 230 255 / 70%);
   border-radius: 50%;
   background: rgb(4 50 72 / 75%);
+  color: #ffe174;
   box-shadow: 0 0 0 3px rgb(10 166 211 / 16%), 0 0 16px rgb(0 188 244 / 72%);
 }
 
-.vehicleMapMarker::before {
+.vehicleMapMarker svg {
   position: absolute;
   top: 4px;
-  left: 50%;
-  width: 22px;
-  height: 27px;
-  background: #ffe174;
-  clip-path: polygon(50% 0, 66% 44%, 96% 72%, 62% 68%, 50% 100%, 38% 68%, 4% 72%, 34% 44%);
-  content: "";
+  left: 4px;
+  width: 28px;
+  height: 28px;
   filter: drop-shadow(0 0 3px rgb(255 225 116 / 82%));
-  transform: translateX(-50%);
 }
 
 .vehicleMapMarker::after {
@@ -108,9 +168,37 @@
   animation: landed-pulse 1.8s ease-in-out infinite;
 }
 
-.vehicleMapMarker[data-landed="true"]::before {
-  background: #fff07b;
+.vehicleMapMarker[data-landed="true"] svg {
+  color: #fff07b;
   filter: drop-shadow(0 0 6px rgb(255 240 123 / 100%));
+}
+
+.offscreenVehicle {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #ffe174;
+  border-radius: 50%;
+  color: #ffe174;
+  background: rgb(4 50 72 / 92%);
+  box-shadow: 0 0 0 3px rgb(255 225 116 / 16%), 0 0 16px rgb(0 188 244 / 62%);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+.offscreenVehicle:hover { background: #07567a; }
+.offscreenVehicle:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+.offscreenDirection {
+  position: absolute;
+  inset: -15px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .homeMapMarker[data-occupied="true"] {

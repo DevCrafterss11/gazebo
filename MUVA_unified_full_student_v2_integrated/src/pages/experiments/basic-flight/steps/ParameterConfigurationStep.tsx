@@ -9,10 +9,10 @@ import { StepNavigation } from '../components/StepNavigation';
 import styles from './ParameterConfigurationStep.module.css';
 
 const fields: Array<{ key: keyof FlightParameters; label: string; range: string; unit: string; min: number; max: number; step: number; help: string }> = [
-  { key: 'takeoffAltitude', label: '目标起飞高度', range: '1–50 m', unit: 'm', min: 1, max: 50, step: 1, help: '起飞后到达的目标高度，也是返航高度的下限。' },
-  { key: 'maxAltitude', label: '最大飞行高度', range: '1–500 m', unit: 'm', min: 1, max: 500, step: 1, help: '教学模拟中的高度上限，不代表真实空域许可。' },
+  { key: 'takeoffAltitude', label: '目标起飞高度', range: '2–50 m', unit: 'm', min: 2, max: 50, step: 1, help: '起飞后到达的目标高度，也是返航高度的下限。' },
+  { key: 'maxAltitude', label: '最大飞行高度', range: '2–120 m', unit: 'm', min: 2, max: 120, step: 1, help: 'SITL 指令上限为 120 米，不代表真实空域许可。' },
   { key: 'maxSpeed', label: '最大水平速度', range: '0.5–20 m/s', unit: 'm/s', min: 0.5, max: 20, step: 0.5, help: '限制任务中的平面移动速度。' },
-  { key: 'rtlAltitude', label: '返航高度 RTL', range: '起飞高度至最大高度', unit: 'm', min: 1, max: 500, step: 1, help: '返航高度应不低于起飞目标，且不高于最大高度。' },
+  { key: 'rtlAltitude', label: '返航高度 RTL', range: '起飞高度至最大高度', unit: 'm', min: 2, max: 120, step: 1, help: '返航高度应不低于起飞目标，且不高于最大高度。' },
   { key: 'hoverDuration', label: '悬停目标时长', range: '1–120 s', unit: 's', min: 1, max: 120, step: 1, help: '悬停训练的目标持续时间。' },
 ];
 

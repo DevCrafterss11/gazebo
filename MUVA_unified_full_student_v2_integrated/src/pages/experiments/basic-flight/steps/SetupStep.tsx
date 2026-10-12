@@ -45,9 +45,9 @@ export function SetupStep({ stepId }: SetupStepProps) {
   const renderEnvironmentStartup = () => (
     <div className={styles.environmentLaunchContent}>
       <ConfigurationSummary />
-      <button className={styles.primaryAction} type="button" disabled={isStarting || environmentReady} onClick={() => void startSimulation()}>
+      <button className={styles.primaryAction} type="button" disabled={isStarting || (environmentReady && simulationStarted)} onClick={() => void startSimulation()}>
         {isStarting ? <LoaderCircle className={styles.spinning} size={17} /> : <Play size={17} />}
-        {environmentReady ? '仿真环境 READY' : isStarting ? '正在启动仿真环境...' : '创建实验并启动仿真环境'}
+        {environmentReady && simulationStarted ? '仿真环境 READY' : isStarting ? '正在启动仿真环境...' : environmentReady ? '继续创建并初始化实验' : '创建实验并启动仿真环境'}
       </button>
     </div>
   );

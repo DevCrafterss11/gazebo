@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { partLearning, parts, questions } from '../../../../domain/assessment/model';
+import { experiment1LearningError } from '../../../../domain/experiment1Workflow';
 import { useExperimentStore } from '../../../../stores/experimentStore';
 import { FlightCanvas } from '../../assessment/FlightCanvas';
 import { ConfigurationSummary } from '../components/ConfigurationSummary';
@@ -12,18 +13,26 @@ type Motion = 'roll' | 'pitch' | 'yaw' | 'throttle';
 export function SystemCognitionStep() {
   const selectedDrone = useExperimentStore((state) => state.selectedDrone);
   const droneModels = useExperimentStore((state) => state.droneModels);
-  const completedSteps = useExperimentStore((state) => state.completedSteps);
+  const sectionQuiz = useExperimentStore((state) => state.assessment?.sectionQuizzes.find((quiz) => quiz.quizId === 'system-cognition'));
+  const saveSectionQuiz = useExperimentStore((state) => state.saveSectionQuiz);
   const validationMessage = useExperimentStore((state) => state.validationMessage);
   const selectDrone = useExperimentStore((state) => state.selectDrone);
   const goToNextStep = useExperimentStore((state) => state.goToNextStep);
   const [selectedPart, setSelectedPart] = useState('frame');
-  const [learnedParts, setLearnedParts] = useState<string[]>([]);
+  const learnedParts = useExperimentStore((state) => state.learningProgress.learnedPartIds);
+  const learnPart = useExperimentStore((state) => state.learnPart);
   const [motion, setMotion] = useState<Motion | null>(null);
   const [playing, setPlaying] = useState(true);
   const [focusPart, setFocusPart] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const quizDrafts = useExperimentStore((state) => state.learningProgress.quizAnswers);
+  const saveQuizDraft = useExperimentStore((state) => state.saveQuizDraft);
+  const answers = sectionQuiz?.answers ?? quizDrafts['system-cognition'] ?? {};
+  const submitted = Boolean(sectionQuiz);
   const iris = droneModels.find((drone) => drone.id === 'iris-quadrotor-01');
+  const learningProgress = useExperimentStore((state) => state.learningProgress);
+  const assessment = useExperimentStore((state) => state.assessment);
+  const isSaving = useExperimentStore((state) => state.isSavingSectionQuiz);
+  const assessmentError = useExperimentStore((state) => state.assessmentError);
 
   useEffect(() => {
     if (iris && selectedDrone?.id !== iris.id) selectDrone(iris.id);
@@ -36,10 +45,10 @@ export function SystemCognitionStep() {
   const part = parts.find((item) => item.id === selectedPart) ?? parts[0]!;
   const learning = partLearning[part.id]!;
   const quizPassed = questions.every((question) => answers[question.id] === question.answer);
-  const ready = Boolean(iris && selectedDrone?.id === iris.id && (completedSteps.includes(1) || learnedParts.length === parts.length && submitted));
+  const ready = Boolean(iris && selectedDrone?.id === iris.id && !experiment1LearningError(1, { learningProgress, assessment }));
   const choosePart = (id: string) => {
     setSelectedPart(id);
-    setLearnedParts((current) => current.includes(id) ? current : [...current, id]);
+    learnPart(id);
   };
 
   return <div className={styles.page}>
@@ -64,8 +73,9 @@ export function SystemCognitionStep() {
     <section className={styles.panel}>
       <h2>学习目标与知识自测</h2>
       <p>① 认识八个核心部件及用途<br/>② 理解飞控—电调—电机的闭环控制<br/>③ 掌握 Roll / Pitch / Yaw / Throttle</p>
-      <div className={styles.quiz}>{questions.map((question) => <label key={question.id}>{question.question}<select value={answers[question.id] ?? ''} onChange={(event) => { setAnswers((current) => ({ ...current, [question.id]: event.target.value })); setSubmitted(false); }}><option value="">请选择</option>{question.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>{submitted && <small>{answers[question.id] === question.answer ? '✓ 正确' : `错误 · ${question.explanation}`}</small>}</label>)}</div>
-      <button onClick={() => setSubmitted(true)} disabled={questions.some((question) => !answers[question.id])}>提交自测</button>
+      <div className={styles.quiz}>{questions.map((question) => <label key={question.id}>{question.question}<select disabled={submitted} value={answers[question.id] ?? ''} onChange={(event) => saveQuizDraft('system-cognition', question.id, event.target.value)}><option value="">请选择</option>{question.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>{submitted && <small>{answers[question.id] === question.answer ? '✓ 正确' : `错误 · ${question.explanation}`}</small>}</label>)}</div>
+      <button onClick={() => { void saveSectionQuiz({ quizId: 'system-cognition', title: '系统组成认知自测', step: 1, answers, questions: questions.map((question) => ({ id: question.id, correctAnswer: question.answer, explanation: question.explanation })) }); }} disabled={isSaving || submitted || questions.some((question) => !answers[question.id])}>{isSaving ? '正在保存自测…' : submitted ? '已提交 · 成绩已冻结' : '提交自测'}</button>
+      {assessmentError && <p role="alert">{assessmentError}</p>}
       {submitted && <p role="status">{quizPassed ? '✓ 知识自测全部答对' : '已记录自测结果，请参考错题解析复习；不影响进入下一步。'}</p>}
       <h3>实验配置摘要</h3><ConfigurationSummary/>
       <div className={styles.stepActions}><StepNavigation canGoBack={false} canGoNext={ready} nextLabel="下一步：实验参数配置" onBack={() => undefined} onNext={() => void goToNextStep()}/></div>

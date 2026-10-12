@@ -1,0 +1,109 @@
+.entry {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+}
+
+.content {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+.content h2,
+.content p {
+  margin: 0;
+}
+
+.content h2 {
+  font-size: var(--font-size-xl);
+}
+
+.content p,
+.progress span {
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
+.stages {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stages li,
+.progress {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-panel-secondary);
+}
+
+.stages li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.stages li span {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.progress {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.progress strong,
+.actions,
+.actions button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.progress small,
+.content .note {
+  color: var(--color-text-muted);
+  line-height: 1.7;
+}
+
+.actions {
+  flex-wrap: wrap;
+}
+
+.actions button,
+.error button {
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-border-active);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  background: var(--color-bg-panel-elevated);
+}
+
+.actions .primaryButton {
+  background: var(--color-primary-deep);
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.content .error {
+  color: var(--color-danger);
+}
+
+@media (max-width: 1100px) {
+  .stages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .content {
+    padding: var(--space-4);
+  }
+}

@@ -6,7 +6,7 @@ import { FlightControlSurface } from '../../../../components/flight/FlightContro
 export function FlightControlPanel() {
   return (
     <PanelShell title="飞行控制" icon={Gamepad2} action={<span>运行模式</span>} emphasis="secondary">
-      <FlightControlSurface />
+      <FlightControlSurface forwardStepMeters={10} verticalStepMeters={5} requirePreflight />
     </PanelShell>
   );
 }

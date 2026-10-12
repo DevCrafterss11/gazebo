@@ -4,17 +4,20 @@ import asyncio
 import json
 import logging
 import os
+import random
 import threading
 import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from pymavlink import mavutil
 
 from .commands import CommandService, GatewayCommandError
 from .config import Settings
@@ -66,6 +69,13 @@ class ExperimentConfigurationRequest(BaseModel):
     currentStep: int = 1
     completedSteps: list[int] = Field(default_factory=list)
     configuration: dict[str, Any]
+    progressId: str | None = None
+    learningProgress: dict[str, Any] | None = None
+    flightMapView: dict[str, Any] | None = None
+    sessionId: str | None = None
+    session: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
+    assessment: dict[str, Any] | None = None
 
 
 class VehicleMoveRequest(BaseModel):
@@ -76,6 +86,22 @@ class VehicleMoveRequest(BaseModel):
 class VehicleYawRequest(BaseModel):
     direction: str
     degrees: float
+
+
+class SecurityRunRequest(BaseModel):
+    caseId: str = Field(pattern="^(replay|degradation)$")
+    mode: str = Field(pattern="^(training|assessment)$")
+    difficulty: str = Field(pattern="^(low|medium|high)$")
+
+
+class SecurityJudgmentRequest(BaseModel):
+    judgment: str = Field(pattern="^(normal|link_anomaly|replay|insufficient_evidence)$")
+    evidenceIds: list[str] = Field(default_factory=list, max_length=100)
+    requestId: str = Field(min_length=1, max_length=100)
+
+
+class SecurityReflectionRequest(BaseModel):
+    reflection: str = Field(default="", max_length=4000)
 
 
 class Gateway:
@@ -96,11 +122,16 @@ class Gateway:
         self._current_configuration: dict[str, Any] | None = None
         self._sessions: dict[str, dict[str, Any]] = {}
         self._records: dict[str, dict[str, Any]] = {}
+        self._progress: dict[str, dict[str, Any]] = {}
+        self._assessments: dict[str, dict[str, Any]] = {}
+        self._security_records: dict[str, dict[str, Any]] = {}
+        self._security_runs: dict[str, dict[str, Any]] = {}
         self._runtime_logs: list[dict[str, Any]] = []
         # The MAVLink infrastructure may already be online because the
         # all-in-one launcher owns it.  The teaching workflow still needs a
         # separate, per-browser "environment started" transition at step 4.
         self._runtime_active = False
+        self._flight_max_altitude = 120.0
         self._sequence = 0
         default_data_path = Path(os.getenv("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "muva" / "platform.json"
         self._storage_path = Path(os.getenv("MUVA_PLATFORM_DATA", str(default_data_path)))
@@ -121,8 +152,14 @@ class Gateway:
                 self._current_configuration = payload.get("configuration") if isinstance(payload.get("configuration"), dict) else None
                 sessions = payload.get("sessions")
                 records = payload.get("records")
+                progress = payload.get("progress")
+                assessments = payload.get("assessments")
+                security_records = payload.get("securityRecords")
                 if isinstance(sessions, dict): self._sessions = sessions
                 if isinstance(records, dict): self._records = records
+                if isinstance(progress, dict): self._progress = progress
+                if isinstance(assessments, dict): self._assessments = assessments
+                if isinstance(security_records, dict): self._security_records = security_records
         except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
             return
 
@@ -131,10 +168,11 @@ class Gateway:
             try:
                 self._storage_path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = self._storage_path.with_suffix(".tmp")
-                temporary.write_text(json.dumps({"configuration": self._current_configuration, "sessions": self._sessions, "records": self._records}, ensure_ascii=False), encoding="utf-8")
+                temporary.write_text(json.dumps({"configuration": self._current_configuration, "sessions": self._sessions, "records": self._records, "progress": self._progress, "assessments": self._assessments, "securityRecords": self._security_records}, ensure_ascii=False), encoding="utf-8")
                 temporary.replace(self._storage_path)
-            except OSError:
-                LOGGER.warning("Unable to persist platform data", exc_info=True)
+            except OSError as error:
+                LOGGER.exception("Unable to persist platform data")
+                raise HTTPException(status_code=507, detail="实验数据保存失败，请检查网关存储空间") from error
 
     def vehicle_snapshot(self) -> dict[str, Any]:
         return self.state.snapshot(self.settings.mavlink_endpoint)
@@ -155,13 +193,15 @@ class Gateway:
         transport = bool(snapshot["connection"]["transportConnected"])
         telemetry = snapshot["telemetry"]
         gps = int(telemetry.get("gpsFixType", 0)) >= 3 and int(telemetry.get("satellites", 0)) >= 6
+        imu_mask = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_GYRO | mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_ACCEL
+        imu = all(int(telemetry.get(field, 0)) & imu_mask == imu_mask for field in ("sensorsPresent", "sensorsEnabled", "sensorsHealth"))
         return {
             "gazebo": "RUNNING" if online else "STOPPED",
             "ardupilotSitl": "RUNNING" if transport else "STOPPED",
             "mavlinkGateway": "CONNECTED" if transport else "DISCONNECTED",
             "heartbeat": "OK" if online else "WAITING",
             "gps": "3D FIX" if gps else "WAITING",
-            "ekf": "HEALTHY" if online and gps else "WAITING",
+            "ekf": "HEALTHY" if online and gps and imu else "WAITING",
             "vehicle": "ONLINE" if online else "UNAVAILABLE",
         }
 
@@ -187,7 +227,7 @@ class Gateway:
         self._sequence += 1
         gps_fix = int(telemetry.get("gpsFixType", 0))
         fix_type = "3D FIX" if gps_fix >= 3 else "NO FIX"
-        healthy = bool(connection["connected"] and gps_fix >= 3 and int(telemetry.get("satellites", 0)) >= 6)
+        healthy = self.runtime_status()["ekf"] == "HEALTHY"
         return {
             "protocolVersion": "1.0", "type": "telemetry", "timestamp": int(time.time() * 1000),
             "vehicleId": f"mavlink-{vehicle.get('systemId') or 'unknown'}", "sequence": self._sequence,
@@ -212,7 +252,10 @@ DRONE_MODELS: list[dict[str, Any]] = [
 ]
 
 SCENES: list[dict[str, Any]] = [
-    {"id": "campus", "name": "校园环境", "description": "包含教学楼、操场和开阔起降区的基础教学场景。", "latitude": 34.1251589, "longitude": 108.8289653, "altitude": 412, "weather": "晴朗 · 22°C", "wind": "东北风 1.2 m/s", "image": "campus"},
+    {"id": "campus", "name": "校园训练场", "description": "包含教学楼、操场和开阔起降区的基础教学场景。", "latitude": 34.1251589, "longitude": 108.8289653, "altitude": 412, "weather": "晴朗 · 22°C", "wind": "东北风 1.2 m/s", "image": "campus"},
+    {"id": "city", "name": "城市训练场", "description": "通过密集街区影像理解视距、遮挡与安全飞行限制。", "latitude": 37.7702, "longitude": -122.415, "altitude": 15, "weather": "晴朗 · 20°C", "wind": "西风 2.4 m/s", "image": "city"},
+    {"id": "mountain", "name": "山地训练场", "description": "观察山地环境，练习高度约束与返航决策。", "latitude": 37.75, "longitude": -119.58, "altitude": 1220, "weather": "多云 · 15°C", "wind": "山谷风 2.8 m/s", "image": "mountain"},
+    {"id": "airport", "name": "机场训练场", "description": "仅用于模拟开放区域起降，真实机场及管制空域不得擅自飞行。", "latitude": 37.618, "longitude": -122.375, "altitude": 4, "weather": "晴朗 · 19°C", "wind": "西风 1.6 m/s", "image": "airport"},
     {"id": "training-field", "name": "标准训练场", "description": "带标准训练点和航线标记的封闭训练区域。", "latitude": 34.1266589, "longitude": 108.8313653, "altitude": 415, "weather": "晴朗 · 21°C", "wind": "东风 0.8 m/s", "image": "training-field"},
     {"id": "open-area", "name": "空旷环境", "description": "障碍物较少，适合初次起飞和姿态控制练习。", "latitude": 34.1223589, "longitude": 108.8245653, "altitude": 395, "weather": "多云 · 20°C", "wind": "西北风 2.1 m/s", "image": "open-area"},
 ]
@@ -241,7 +284,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
         CORSMiddleware,
         allow_origins=list(configured_settings.cors_origins),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
 
@@ -261,7 +304,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
             "batteryPercent": float(max(0, telemetry.get("battery", 0))),
             "armed": bool(snapshot["vehicle"].get("armed", False)),
             "altitude": float(telemetry.get("altitude", 0)),
-            "maxAltitude": 120.0,
+            "maxAltitude": gateway_instance._flight_max_altitude,
             "homePosition": snapshot.get("home") if snapshot.get("home", {}).get("valid") else None,
         }
 
@@ -286,6 +329,247 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
             "endpoint": gateway_instance.settings.mavlink_endpoint,
         }
 
+    def security_public(run: dict[str, Any]) -> dict[str, Any]:
+        result = {key: deepcopy(value) for key, value in run.items() if not key.startswith("_")}
+        if run["config"]["mode"] == "assessment" and run["phase"] not in ("completed", "aborted", "failed"):
+            result["config"]["caseId"] = "hidden"
+            result["seed"] = None
+        return result
+
+    def security_require(gateway_instance: Gateway, run_id: str) -> dict[str, Any]:
+        run = gateway_instance._security_runs.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="安全实验运行不存在")
+        return run
+
+    def security_event(run: dict[str, Any], code: str, detail: str, received_at: int) -> dict[str, Any]:
+        event = {"id": f"{run['runId']}-{received_at}-{code}", "code": code, "detail": detail, "receivedAt": received_at, "automatic": True}
+        if not any(item["id"] == event["id"] for item in run["evidence"]):
+            run["evidence"].append(event)
+            run["timeline"].append({"at": received_at, "label": detail, "kind": "detection"})
+        return event
+
+    @app.post("/api/v1/security/runs")
+    async def security_create(request: Request, payload: SecurityRunRequest) -> dict[str, Any]:
+        gateway_instance = gateway_from_request(request)
+        snapshot = gateway_instance.vehicle_snapshot()
+        if not snapshot["connection"]["connected"]:
+            raise HTTPException(status_code=503, detail="真实飞控遥测不可用；API 模式不会回退到模拟数据")
+        case_id = payload.caseId if payload.mode == "training" else random.choice(("replay", "degradation"))
+        seed = random.SystemRandom().randrange(1, 2**31)
+        run_id = f"security-{uuid4().hex}"
+        now = int(time.time() * 1000)
+        run = {"runId": run_id, "config": {"caseId": case_id, "mode": payload.mode, "difficulty": payload.difficulty}, "caseVersion": "1.0", "seed": seed, "phase": "preparation", "source": "mavlink", "telemetry": None, "evidence": [], "timeline": [{"at": now, "label": "创建专属安全实验运行", "kind": "run"}], "judgment": None, "judgments": [], "evidenceIds": [], "isolation": "not_submitted", "score": None, "_lastSequence": None, "_lastReceivedAt": None, "_baseline": [], "_ticks": 0, "_recoveryCount": 0, "_anomalyStarts": None, "_injection": False, "_isolated": False, "_subscribed": False, "_judgmentRequests": set(), "_startedMonotonic": time.monotonic(), "_recoveryStartedAt": None, "_recoveryMs": None, "_judgedElapsedMs": None, "_reflection": ""}
+        gateway_instance._security_runs[run_id] = run
+        return security_public(run)
+
+    @app.get("/api/v1/security/runs/{run_id}")
+    async def security_get(request: Request, run_id: str) -> dict[str, Any] | None:
+        run = gateway_from_request(request)._security_runs.get(run_id)
+        return security_public(run) if run else None
+
+    @app.get("/api/v1/security/records")
+    async def security_records(request: Request) -> list[dict[str, Any]]:
+        return deepcopy(list(gateway_from_request(request)._security_records.values()))
+
+    @app.post("/api/v1/security/runs/{run_id}/baseline")
+    async def security_baseline(request: Request, run_id: str) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if run["phase"] == "preparation":
+            run["phase"] = "baseline"
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "开始正常遥测对照", "kind": "baseline"})
+        return security_public(run)
+
+    @app.post("/api/v1/security/runs/{run_id}/anomaly")
+    async def security_anomaly(request: Request, run_id: str) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if run["phase"] == "baseline":
+            run["phase"] = "anomaly"
+            run["_injection"] = True
+            run["_anomalyStarts"] = time.monotonic() + 2.0
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "异常观察阶段开始（触发方案保留在服务端）", "kind": "anomaly"})
+        return security_public(run)
+
+    @app.post("/api/v1/security/runs/{run_id}/judgment")
+    async def security_judgment(request: Request, run_id: str, payload: SecurityJudgmentRequest) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if payload.requestId not in run["_judgmentRequests"] and run["phase"] in ("baseline", "anomaly"):
+            known = {item["id"] for item in run["evidence"]}
+            run["_judgmentRequests"].add(payload.requestId)
+            evidence_ids = list(dict.fromkeys(item for item in payload.evidenceIds if item in known))
+            false_positive = run["phase"] == "baseline" and payload.judgment != "normal"
+            elapsed = int((time.monotonic() - run["_startedMonotonic"]) * 1000)
+            run["judgments"].append({"judgment": payload.judgment, "evidenceIds": evidence_ids, "elapsedMs": elapsed, "falsePositive": false_positive})
+            if run["phase"] == "anomaly":
+                run["judgment"] = payload.judgment
+                run["evidenceIds"] = evidence_ids
+                run["_judgedElapsedMs"] = elapsed
+            run["timeline"].append({"at": int(time.time() * 1000), "label": f"学生提交判断：{payload.judgment}" + ("（正常对照误报）" if false_positive else ""), "kind": "judgment"})
+        return security_public(run)
+
+    @app.post("/api/v1/security/runs/{run_id}/isolate")
+    async def security_isolate(request: Request, run_id: str) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if run["isolation"] == "not_submitted":
+            run["isolation"] = "submitted"
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "提交异常数据隔离请求", "kind": "action"})
+            run["isolation"] = "accepted"
+            run["_isolated"] = True
+            run["isolation"] = "executed"
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "Gateway 已隔离当前实验通道异常数据", "kind": "action"})
+        return security_public(run)
+
+    @app.post("/api/v1/security/runs/{run_id}/stop-injection")
+    async def security_stop_injection(request: Request, run_id: str) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if run["phase"] == "anomaly":
+            run["_injection"] = False
+            run["phase"] = "recovery"
+            run["_recoveryCount"] = 0
+            run["_lastSequence"] = None
+            run["_lastReceivedAt"] = None
+            run["_recoveryStartedAt"] = time.monotonic()
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "停止注入、丢弃待发送数据并恢复实时订阅", "kind": "action"})
+        return security_public(run)
+
+    @app.post("/api/v1/security/runs/{run_id}/verify")
+    async def security_verify(request: Request, run_id: str) -> dict[str, Any]:
+        run = security_require(gateway_from_request(request), run_id)
+        if run["phase"] == "recovery" and run["_recoveryCount"] >= 3:
+            if run["isolation"] != "verified":
+                run["isolation"] = "verified"
+                run["_recoveryMs"] = int((time.monotonic() - run["_recoveryStartedAt"]) * 1000) if run["_recoveryStartedAt"] is not None else None
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "至少 3 条连续实时遥测验证恢复", "kind": "recovery"})
+        else:
+            run["error"] = "需要至少 3 条连续实时遥测才能验证恢复"
+        return security_public(run)
+
+    def security_score(run: dict[str, Any]) -> dict[str, Any]:
+        expected = "replay" if run["config"]["caseId"] == "replay" else "link_anomaly"
+        judgment_correct = run["judgment"] == expected
+        deductions: list[str] = []
+        if not judgment_correct:
+            deductions.append("判断与服务端实际事件不符或未提交（-30）")
+        if not run["evidenceIds"]:
+            deductions.append("未提交有效证据（-15）")
+        false_positives = sum(1 for item in run["judgments"] if item["falsePositive"])
+        if false_positives:
+            deductions.append(f"正常对照误报 {false_positives} 次（每次扣 5 分，最多扣 15 分）")
+        sections = {"judgmentEvidence": max(0, (30 if judgment_correct and run["evidenceIds"] else 18 if judgment_correct else 0) - min(15, false_positives * 5)), "timeliness": 15 if judgment_correct and run["_judgedElapsedMs"] is not None and run["_judgedElapsedMs"] <= 30000 else 5 if judgment_correct else 0, "handling": 25 if run["isolation"] in ("executed", "verified") else 0, "recovery": 20 if run["isolation"] == "verified" else 0, "reflection": 10 if len(run["_reflection"].strip()) >= 20 else 0}
+        return {"total": sum(sections.values()), "sections": sections, "deductions": deductions}
+
+    async def security_end(request: Request, run_id: str, phase: str, reflection: str = "") -> dict[str, Any]:
+        gateway_instance = gateway_from_request(request)
+        run = security_require(gateway_instance, run_id)
+        if run["phase"] not in ("completed", "aborted", "failed"):
+            run["_injection"] = False
+            run["_isolated"] = True
+            run["_reflection"] = reflection
+            run["phase"] = phase
+            run["score"] = security_score(run)
+            run["timeline"].append({"at": int(time.time() * 1000), "label": "运行结束：停止注入并清理专属通道", "kind": phase})
+            gateway_instance._security_records[run_id] = {key: deepcopy(value) for key, value in run.items() if not key.startswith("_")}
+            gateway_instance._security_records[run_id]["scoreSource"] = "gateway"
+            gateway_instance._security_records[run_id]["scoreVersion"] = "security-score-v1"
+            gateway_instance._security_records[run_id]["reflection"] = reflection
+            gateway_instance._security_records[run_id]["limitations"] = ["未评价飞行任务完成率、真实飞控防御或真实网络攻击阻断效果", "当前 Gateway 无真实身份认证，不构成防篡改正式考试"]
+            gateway_instance.save_platform_data()
+        report = deepcopy(gateway_instance._security_records.get(run_id, {}))
+        report["recoveryMs"] = run["_recoveryMs"]
+        return report
+
+    @app.post("/api/v1/security/runs/{run_id}/finish")
+    async def security_finish(request: Request, run_id: str, payload: SecurityReflectionRequest) -> dict[str, Any]:
+        return await security_end(request, run_id, "completed", payload.reflection)
+
+    @app.post("/api/v1/security/runs/{run_id}/abort")
+    async def security_abort(request: Request, run_id: str) -> dict[str, Any]:
+        return await security_end(request, run_id, "aborted")
+
+    @app.websocket("/ws/security/{run_id}")
+    async def security_telemetry(websocket: WebSocket, run_id: str) -> None:
+        gateway_instance: Gateway = websocket.app.state.gateway
+        run = gateway_instance._security_runs.get(run_id)
+        if run is None:
+            await websocket.close(code=4404, reason="Security run not found")
+            return
+        if run["_subscribed"]:
+            await websocket.close(code=4409, reason="Security run already has an active subscriber")
+            return
+        run["_subscribed"] = True
+        await websocket.accept()
+        last_sent: dict[str, Any] | None = None
+        try:
+            while run["phase"] not in ("completed", "aborted", "failed"):
+                snapshot = gateway_instance.state.snapshot(gateway_instance.settings.mavlink_endpoint)
+                if not snapshot["connection"]["connected"]:
+                    if run["phase"] == "recovery":
+                        run["_recoveryCount"] = 0
+                    await websocket.send_json({"protocolVersion": "security.telemetry.v1", "type": "security.sample", "sample": {"protocolVersion": "security.telemetry.v1", "runId": run_id, "source": "mavlink", "sequence": last_sent["sequence"] if last_sent else 0, "capturedAt": last_sent["capturedAt"] if last_sent else 0, "receivedAt": int(time.time() * 1000), "elapsedMs": int((time.monotonic() - run["_startedMonotonic"]) * 1000), "altitude": last_sent["altitude"] if last_sent else 0, "speed": last_sent["speed"] if last_sent else 0, "battery": last_sent["battery"] if last_sent else 0, "stale": True, "connection": "unavailable"}})
+                    await asyncio.sleep(1)
+                    continue
+                envelope = gateway_instance.telemetry_envelope()
+                run["_ticks"] += 1
+                now = int(time.time() * 1000)
+                if run["phase"] == "baseline":
+                    run["_baseline"].append(deepcopy(envelope))
+                    run["_baseline"] = run["_baseline"][-12:]
+                inject = bool(run["_injection"] and not run["_isolated"] and run["_anomalyStarts"] and time.monotonic() >= run["_anomalyStarts"])
+                interrupted = inject and run["config"]["caseId"] == "degradation" and run["config"]["difficulty"] == "high" and run["_ticks"] % 8 == 0
+                dropped = inject and run["config"]["caseId"] == "degradation" and run["_ticks"] % (7 if run["config"]["difficulty"] == "low" else 4) == 0
+                if dropped:
+                    await asyncio.sleep(1)
+                    continue
+                if inject and run["config"]["caseId"] == "replay" and run["_baseline"]:
+                    envelope = deepcopy(run["_baseline"][0])
+                if interrupted and last_sent:
+                    envelope = deepcopy(last_sent)
+                if inject and run["config"]["caseId"] == "degradation":
+                    delay = {"low": 0.35, "medium": 0.8, "high": 1.2}[run["config"]["difficulty"]]
+                    await asyncio.sleep(delay)
+                    if run["phase"] != "anomaly" or not run["_injection"] or run["_isolated"]:
+                        continue
+                now = int(time.time() * 1000)
+                telemetry = envelope["payload"]
+                captured_at = int(envelope["timestamp"])
+                sequence = int(envelope["sequence"])
+                stale = interrupted or now - captured_at > 2500
+                previous_sequence = run["_lastSequence"]
+                previous_received_at = run["_lastReceivedAt"]
+                sequence_delta = sequence - previous_sequence if previous_sequence is not None else None
+                missing_rate = ((sequence_delta - 1) / sequence_delta * 100) if sequence_delta and sequence_delta > 1 else 0.0 if sequence_delta == 1 else None
+                receive_interval = now - previous_received_at if previous_received_at is not None else None
+                sample = {"protocolVersion": "security.telemetry.v1", "runId": run_id, "source": "mavlink", "sequence": sequence, "capturedAt": captured_at, "receivedAt": now, "elapsedMs": int((time.monotonic() - run["_startedMonotonic"]) * 1000), "receiveIntervalMs": receive_interval, "missingRatePct": missing_rate, "altitude": float(telemetry["position"]["altitude"]), "speed": float(telemetry["velocity"]["groundSpeed"]), "battery": float(telemetry["batteryPercent"]), "stale": stale, "connection": "interrupted" if interrupted else "connected"}
+                if run["_lastSequence"] is not None and sequence <= run["_lastSequence"]:
+                    code = "duplicate_sequence" if sequence == run["_lastSequence"] else "sequence_regression"
+                    security_event(run, code, f"接收序列 {sequence} 未超过实验通道前序 {run['_lastSequence']}", now)
+                elif sequence_delta is not None and sequence_delta > 1:
+                    security_event(run, "packet_loss", f"实验通道序列缺口 {sequence_delta - 1}；估算缺失率 {missing_rate:.1f}%", now)
+                if stale:
+                    security_event(run, "stale_data", f"遥测数据年龄 {now - captured_at} ms，超过 2500 ms", now)
+                if sample["connection"] == "interrupted":
+                    security_event(run, "connection_interrupted", "当前实验页面遥测订阅发生短时中断；不代表飞控失联", now)
+                if run["_lastReceivedAt"] and now - run["_lastReceivedAt"] > 2500:
+                    security_event(run, "receive_gap", f"页面接收间隔 {now - run['_lastReceivedAt']} ms", now)
+                if run["phase"] == "recovery":
+                    run["_recoveryCount"] = run["_recoveryCount"] + 1 if sequence > (run["_lastSequence"] or -1) and not stale else 0
+                    if run["_recoveryCount"] >= 3:
+                        security_event(run, "recovered", "实时遥测连续恢复", now)
+                run["_lastSequence"] = sequence
+                run["_lastReceivedAt"] = now
+                run["telemetry"] = sample
+                run["timeline"] = run["timeline"][-500:]
+                run["evidence"] = run["evidence"][-500:]
+                await websocket.send_json({"protocolVersion": "security.telemetry.v1", "type": "security.sample", "sample": sample})
+                if run["evidence"]:
+                    await websocket.send_json({"protocolVersion": "security.telemetry.v1", "type": "security.evidence", "evidence": run["evidence"][-4:]})
+                last_sent = sample
+                await asyncio.sleep(1)
+        except (WebSocketDisconnect, RuntimeError):
+            LOGGER.info("Security telemetry subscriber disconnected for %s", run_id)
+        finally:
+            run["_subscribed"] = False
+
     # Versioned contract consumed by the MUVA teaching frontend.
     @app.get("/api/v1/drones")
     async def v1_drones() -> list[dict[str, Any]]:
@@ -299,7 +583,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     async def v1_create_experiment(request: Request, payload: ExperimentCreateRequest) -> dict[str, Any]:
         gateway_instance = gateway_from_request(request)
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        experiment_id = f"muva-exp-{int(time.time() * 1000)}"
+        experiment_id = f"muva-exp-{uuid4().hex}"
         session = {"id": experiment_id, "name": payload.name, "drone": payload.drone, "scene": payload.scene, "createdAt": now, "startedAt": None, "status": "CREATED", "configuration": payload.configuration}
         with gateway_instance._platform_lock:
             gateway_instance._sessions[experiment_id] = session
@@ -309,9 +593,36 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/experiments/configuration")
     async def v1_save_configuration(request: Request, payload: ExperimentConfigurationRequest) -> dict[str, bool]:
         gateway_instance = gateway_from_request(request)
-        gateway_instance._current_configuration = payload.model_dump()
+        state = payload.model_dump(exclude_none=True)
+        gateway_instance._current_configuration = state
+        if payload.progressId:
+            gateway_instance._progress[payload.progressId] = state
         gateway_instance.save_platform_data()
         return {"ok": True}
+
+    @app.get("/api/v1/experiments/progress/{progress_id}")
+    async def v1_load_progress(request: Request, progress_id: str) -> dict[str, Any] | None:
+        return deepcopy(gateway_from_request(request)._progress.get(progress_id))
+
+    @app.delete("/api/v1/experiments/progress/{progress_id}")
+    async def v1_clear_progress(request: Request, progress_id: str) -> dict[str, bool]:
+        gateway_instance = gateway_from_request(request)
+        gateway_instance._progress.pop(progress_id, None)
+        gateway_instance.save_platform_data()
+        return {"ok": True}
+
+    @app.put("/api/v1/experiments/{experiment_id}/assessment")
+    async def v1_save_assessment(request: Request, experiment_id: str, payload: dict[str, Any]) -> dict[str, bool]:
+        gateway_instance = gateway_from_request(request)
+        if experiment_id not in gateway_instance._sessions or payload.get("sessionId") != experiment_id:
+            raise HTTPException(status_code=404, detail="实验 Session 不存在或评分 Session 不匹配")
+        gateway_instance._assessments[experiment_id] = deepcopy(payload)
+        gateway_instance.save_platform_data()
+        return {"ok": True}
+
+    @app.get("/api/v1/experiments/{experiment_id}/assessment")
+    async def v1_load_assessment(request: Request, experiment_id: str) -> dict[str, Any] | None:
+        return deepcopy(gateway_from_request(request)._assessments.get(experiment_id))
 
     @app.get("/api/v1/experiments/current")
     async def v1_load_configuration(request: Request) -> dict[str, Any] | None:
@@ -339,8 +650,9 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     async def v1_finish_experiment(request: Request, experiment_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         gateway_instance = gateway_from_request(request)
         session = gateway_instance._sessions.get(experiment_id)
-        if session is not None:
-            session["status"] = "FINISHED"
+        if session is None:
+            raise HTTPException(status_code=404, detail="实验 Session 不存在")
+        session["status"] = "FINISHED"
         result = deepcopy(payload)
         gateway_instance.save_platform_data()
         return result
@@ -348,6 +660,8 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/experiments/{experiment_id}/record")
     async def v1_save_record(request: Request, experiment_id: str, payload: dict[str, Any]) -> dict[str, bool]:
         gateway_instance = gateway_from_request(request)
+        if experiment_id not in gateway_instance._sessions or payload.get("id") != experiment_id:
+            raise HTTPException(status_code=404, detail="实验 Session 不存在或记录 ID 不匹配")
         gateway_instance._records[experiment_id] = deepcopy(payload)
         gateway_instance.save_platform_data()
         return {"ok": True}
@@ -362,18 +676,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
 
     @app.get("/api/v1/runtime/status")
     async def v1_runtime_status(request: Request) -> dict[str, str]:
-        gateway_instance = gateway_from_request(request)
-        saved_step = (gateway_instance._current_configuration or {}).get("currentStep", 1)
-        # At step 4 a fresh browser has no `simulationStarted` flag yet.  Let
-        # it replay the idempotent start request instead of restoring READY and
-        # ending up with both the start and next buttons disabled.
-        if isinstance(saved_step, int) and saved_step <= 4:
-            return {
-                "gazebo": "STOPPED", "ardupilotSitl": "STOPPED",
-                "mavlinkGateway": "DISCONNECTED", "heartbeat": "WAITING",
-                "gps": "WAITING", "ekf": "WAITING", "vehicle": "UNAVAILABLE",
-            }
-        return gateway_instance.runtime_status()
+        return gateway_from_request(request).runtime_status()
 
     @app.get("/api/v1/runtime/logs")
     async def v1_runtime_logs(request: Request) -> list[dict[str, Any]]:
@@ -382,6 +685,16 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/runtime/start")
     async def v1_runtime_start(request: Request, payload: dict[str, Any]) -> dict[str, str]:
         gateway_instance = gateway_from_request(request)
+        experiment_id = payload.get("experimentId")
+        if not isinstance(experiment_id, str) or experiment_id not in gateway_instance._sessions:
+            raise HTTPException(status_code=404, detail="实验 Session 不存在，请先创建实验")
+        parameters = payload.get("flightParameters", {})
+        try:
+            maximum = float(parameters["maxAltitude"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="最大飞行高度无效") from None
+        if not 2 <= maximum <= 120:
+            raise HTTPException(status_code=422, detail="最大飞行高度必须在 2–120 米之间")
         gateway_instance.transport.start()
         gateway_instance.monitor.start()
         gateway_instance.append_runtime_log("STARTING_MAVLINK_GATEWAY", "正在连接 MAVLink Gateway")
@@ -393,6 +706,9 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
             gateway_instance.append_runtime_log("ERROR", "未收到飞行器 Heartbeat，环境启动失败")
             raise ConnectionError("No recent vehicle heartbeat")
         gateway_instance._runtime_active = True
+        gateway_instance._flight_max_altitude = maximum
+        gateway_instance._sessions[experiment_id]["status"] = "RUNNING"
+        gateway_instance.save_platform_data()
         runtime = gateway_instance.runtime_status()
         gateway_instance.append_runtime_log("READY" if runtime["vehicle"] == "ONLINE" else "WAITING_HEARTBEAT", "仿真环境 READY" if runtime["vehicle"] == "ONLINE" else "等待飞行器 Heartbeat")
         return runtime
@@ -413,15 +729,27 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
         gateway_instance = gateway_from_request(request)
         context = safety_context(gateway_instance)
         connected = bool(context["vehicleOnline"])
-        gps_ok = connected and context["gpsSatellites"] >= 6
-        ekf_ok = connected and context["ekfHealthy"]
+        telemetry = gateway_instance.vehicle_snapshot()["telemetry"]
+        present = int(telemetry.get("sensorsPresent", 0))
+        enabled = int(telemetry.get("sensorsEnabled", 0))
+        health = int(telemetry.get("sensorsHealth", 0))
+        def sensor_healthy(*names: str) -> bool:
+            mask = 0
+            for name in names:
+                mask |= int(getattr(mavutil.mavlink, f"MAV_SYS_STATUS_SENSOR_{name}"))
+            return connected and present & mask == mask and enabled & mask == mask and health & mask == mask
+        gps_ok = connected and int(telemetry.get("gpsFixType", 0)) >= 3 and context["gpsSatellites"] >= 6
+        imu_ok = sensor_healthy("3D_GYRO", "3D_ACCEL")
+        compass_ok = sensor_healthy("3D_MAG")
+        barometer_ok = sensor_healthy("ABSOLUTE_PRESSURE")
+        ekf_ok = gps_ok and imu_ok and context["ekfHealthy"]
         return [
             {"id": "heartbeat", "name": "Heartbeat", "status": "PASS" if connected else "FAIL", "details": ["Heartbeat OK" if connected else "Heartbeat unavailable", "Vehicle ONLINE" if connected else "Vehicle offline"]},
             {"id": "gps", "name": "GPS", "status": "PASS" if gps_ok else "FAIL", "details": ["3D Fix" if gps_ok else "Fix unavailable", f"{context['gpsSatellites']} satellites", "HDOP from vehicle telemetry"]},
-            {"id": "imu", "name": "IMU", "status": "PASS" if connected else "FAIL", "details": ["Gyroscope Healthy" if connected else "Unavailable", "Accelerometer Healthy" if connected else "Unavailable"]},
-            {"id": "compass", "name": "Compass", "status": "PASS" if connected else "FAIL", "details": ["Healthy" if connected else "Unavailable"]},
-            {"id": "barometer", "name": "Barometer", "status": "PASS" if connected else "FAIL", "details": ["Healthy" if connected else "Unavailable"]},
-            {"id": "ekf", "name": "EKF", "status": "PASS" if ekf_ok else "FAIL", "details": ["Healthy" if ekf_ok else "Unavailable"]},
+            {"id": "imu", "name": "IMU", "status": "PASS" if imu_ok else "FAIL", "details": ["SYS_STATUS gyro/accelerometer health" if imu_ok else "SYS_STATUS IMU unavailable or unhealthy"]},
+            {"id": "compass", "name": "Compass", "status": "PASS" if compass_ok else "FAIL", "details": ["SYS_STATUS magnetometer health" if compass_ok else "SYS_STATUS compass unavailable or unhealthy"]},
+            {"id": "barometer", "name": "Barometer", "status": "PASS" if barometer_ok else "FAIL", "details": ["SYS_STATUS pressure health" if barometer_ok else "SYS_STATUS barometer unavailable or unhealthy"]},
+            {"id": "ekf", "name": "EKF", "status": "PASS" if ekf_ok else "FAIL", "details": ["GPS fix and SYS_STATUS IMU health (EKF inferred)" if ekf_ok else "GPS/IMU unavailable; EKF cannot be inferred"]},
         ]
 
     @app.post("/api/v1/flight/preflight")
@@ -430,8 +758,8 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
         runtime = gateway_instance.runtime_status()
         config = payload.get("configuration", {}) if isinstance(payload, dict) else {}
         parameters = config.get("flightParameters", {}) if isinstance(config, dict) else {}
-        sensors = config.get("sensors", []) if isinstance(config, dict) else []
-        sensor_by_id = {item.get("id"): item for item in sensors if isinstance(item, dict)}
+        observed_sensors = await v1_sensor_check(request)
+        sensor_by_id = {item["id"]: item for item in observed_sensors}
         def sensor_pass(sensor_id: str) -> bool: return sensor_by_id.get(sensor_id, {}).get("status") == "PASS"
         home = config.get("homePosition") if isinstance(config, dict) else None
         checks = [
@@ -444,7 +772,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
             ("imu", "IMU Healthy", sensor_pass("imu"), "IMU 尚未通过系统检查"),
             ("compass", "Compass Healthy", sensor_pass("compass"), "Compass 尚未通过系统检查"),
             ("barometer", "Barometer Healthy", sensor_pass("barometer"), "Barometer 尚未通过系统检查"),
-            ("home", "Home Position Set", isinstance(home, dict) and all(isinstance(home.get(key), (int, float)) for key in ("latitude", "longitude", "altitude")), "Home Position 未设置"),
+            ("home", "Home Position Set", bool(gateway_instance.vehicle_snapshot()["home"].get("valid")), "SITL Home Position 未设置"),
             ("parameters", "Flight Parameters Valid", isinstance(parameters, dict) and float(parameters.get("takeoffAltitude", 0)) >= 1 and float(parameters.get("maxAltitude", 0)) >= float(parameters.get("takeoffAltitude", 0)), "飞行参数无效"),
             ("vehicle-disarmed", "Vehicle Disarmed", not bool(gateway_instance.vehicle_snapshot()["vehicle"].get("armed", False)), "飞行器必须处于未解锁状态"),
         ]
@@ -464,7 +792,11 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
 
     @app.post("/api/v1/vehicle/takeoff")
     async def v1_vehicle_takeoff(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-        return await asyncio.to_thread(gateway_from_request(request).commands.takeoff, float(payload.get("altitudeMeters", payload.get("altitude", 0))))
+        gateway_instance = gateway_from_request(request)
+        altitude = float(payload.get("altitudeMeters", payload.get("altitude", 0)))
+        if altitude > gateway_instance._flight_max_altitude:
+            raise HTTPException(status_code=422, detail="起飞高度超过实验配置的最大飞行高度")
+        return await asyncio.to_thread(gateway_instance.commands.takeoff, altitude)
 
     @app.post("/api/v1/vehicle/land")
     async def v1_vehicle_land(request: Request) -> dict[str, Any]:
@@ -480,7 +812,10 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
 
     @app.post("/api/v1/vehicle/move")
     async def v1_vehicle_move(request: Request, payload: VehicleMoveRequest) -> dict[str, Any]:
-        return await asyncio.to_thread(gateway_from_request(request).commands.move, payload.direction, payload.meters)
+        gateway_instance = gateway_from_request(request)
+        if payload.direction == "up" and float(gateway_instance.state.telemetry_value("altitude") or 0) + payload.meters > gateway_instance._flight_max_altitude:
+            raise HTTPException(status_code=422, detail="上升目标超过实验配置的最大飞行高度")
+        return await asyncio.to_thread(gateway_instance.commands.move, payload.direction, payload.meters)
 
     @app.post("/api/v1/vehicle/yaw")
     async def v1_vehicle_yaw(request: Request, payload: VehicleYawRequest) -> dict[str, Any]:
@@ -529,19 +864,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/missions/clear")
     async def v1_clear_mission(request: Request) -> dict[str, bool]:
         gateway_instance = gateway_from_request(request)
-        target_system, target_component = gateway_instance.state.target
-        gateway_instance.monitor.state.record_local_event(
-            "MISSION_CLEAR_ALL",
-            "mission",
-            "info",
-            f"clear all mission items target={target_system}/{target_component}",
-            source_system=target_system,
-            source_component=target_component,
-            direction="TX",
-        )
-        gateway_instance.transport.send(lambda connection: connection.mav.mission_clear_all_send(target_system, target_component))
-        gateway_instance.state.set_mission_state("idle")
-        gateway_instance.state.set_mission_verification(False)
+        await asyncio.to_thread(gateway_instance.missions.clear)
         return {"ok": True}
 
     @app.get("/api/vehicle")

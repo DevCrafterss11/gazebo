@@ -18,17 +18,26 @@ export class WebSocketTelemetryService implements TelemetrySocketService {
   private readonly messageHandlers = new Set<TelemetryMessageHandler>();
   private readonly stateHandlers = new Set<ConnectionStateHandler>();
   private socket: WebSocket | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectEnabled = false;
 
   constructor(endpoint = import.meta.env.VITE_TELEMETRY_WS_URL ?? 'ws://localhost:8000/ws/telemetry') {
     this.endpoint = endpoint;
   }
 
   connect(): void {
+    this.reconnectEnabled = true;
     if (this.socket) return;
     this.emitConnectionState('connecting');
     this.socket = new WebSocket(this.endpoint);
     this.socket.onopen = () => this.emitConnectionState('connected');
-    this.socket.onclose = () => { this.socket = null; this.emitConnectionState('disconnected'); };
+    this.socket.onclose = () => {
+      this.socket = null;
+      this.emitConnectionState('disconnected');
+      if (this.reconnectEnabled && !this.reconnectTimer) {
+        this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, 2000);
+      }
+    };
     this.socket.onerror = (event: Event) => {
       console.error('Telemetry WebSocket error', event);
       this.emitConnectionState('error');
@@ -46,6 +55,8 @@ export class WebSocketTelemetryService implements TelemetrySocketService {
   }
 
   disconnect(): void {
+    this.reconnectEnabled = false;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     this.socket?.close();
     this.socket = null;
     this.emitConnectionState('disconnected');

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { useExperimentStore } from '../../../stores/experimentStore';
+import { ExperimentEntry } from './components/ExperimentEntry';
 import { BasicFlightTrainingStep } from './steps/BasicFlightTrainingStep';
 import { ParameterConfigurationStep } from './steps/ParameterConfigurationStep';
 import { TrainingSceneStep } from './steps/TrainingSceneStep';
@@ -12,15 +13,16 @@ import { SetupStep } from './steps/SetupStep';
 export function BasicFlightPage() {
   const currentStep = useExperimentStore((state) => state.experiment.currentStep);
   const initialize = useExperimentStore((state) => state.initialize);
-  const initializationError = useExperimentStore((state) => state.initializationError);
+  const showEntry = useExperimentStore((state) => state.showEntry);
+  const isExperimentActive = useExperimentStore((state) => state.isExperimentActive);
 
   useEffect(() => {
+    showEntry();
     void initialize();
-  }, [initialize]);
+    return () => { void useExperimentStore.getState().saveProgress(); };
+  }, [initialize, showEntry]);
 
-  if (initializationError) {
-    return <section role="alert">{initializationError}</section>;
-  }
+  if (!isExperimentActive) return <ExperimentEntry />;
 
   if (currentStep === 1) {
     return <SystemCognitionStep />;

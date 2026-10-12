@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Activity, Check, CircleAlert, ClipboardCheck, Compass, Home, MapPinned, Radar, ShieldCheck } from 'lucide-react';
+import { experiment1LearningError } from '../../../../domain/experiment1Workflow';
 
 import { useEnvironmentStore } from '../../../../stores/environmentStore';
 import { useExperimentStore } from '../../../../stores/experimentStore';
@@ -32,8 +32,14 @@ const diagnosticQuestions = [
 ] as const;
 
 function DiagnosticQuiz() {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const sectionQuiz = useExperimentStore((state) => state.assessment?.sectionQuizzes.find((quiz) => quiz.quizId === 'flight-diagnostics'));
+  const saveSectionQuiz = useExperimentStore((state) => state.saveSectionQuiz);
+  const quizDrafts = useExperimentStore((state) => state.learningProgress.quizAnswers);
+  const saveQuizDraft = useExperimentStore((state) => state.saveQuizDraft);
+  const answers = sectionQuiz?.answers ?? quizDrafts['flight-diagnostics'] ?? {};
+  const submitted = Boolean(sectionQuiz);
+  const isSaving = useExperimentStore((state) => state.isSavingSectionQuiz);
+  const assessmentError = useExperimentStore((state) => state.assessmentError);
   const answered = diagnosticQuestions.filter((question) => answers[question.id]).length;
   const correct = diagnosticQuestions.filter((question) => answers[question.id] === question.correct).length;
   return <section className={`${styles.panel} ${styles.quiz}`} aria-label="飞控诊断自测">
@@ -41,10 +47,11 @@ function DiagnosticQuiz() {
     <div className={styles.quizCards}>{diagnosticQuestions.map((question, index) => <div className={styles.quizCard} key={question.id}>
       <div className={styles.quizTitle}><span>0{index + 1} · {question.title}</span>{submitted && <b className={answers[question.id] === question.correct ? styles.pass : styles.fail}>{answers[question.id] === question.correct ? '判断正确' : '需要复习'}</b>}</div>
       <p>{question.observation}</p><strong>{question.question}</strong>
-      <div className={styles.quizChoices}>{question.choices.map((choice) => <label className={answers[question.id] === choice.id ? styles.choiceSelected : ''} key={choice.id}><input type="radio" name={`diagnosis-${question.id}`} checked={answers[question.id] === choice.id} onChange={() => { setAnswers((previous) => ({ ...previous, [question.id]: choice.id })); setSubmitted(false); }} />{choice.label}</label>)}</div>
+      <div className={styles.quizChoices}>{question.choices.map((choice) => <label className={answers[question.id] === choice.id ? styles.choiceSelected : ''} key={choice.id}><input disabled={submitted} type="radio" name={`diagnosis-${question.id}`} checked={answers[question.id] === choice.id} onChange={() => saveQuizDraft('flight-diagnostics', question.id, choice.id)} />{choice.label}</label>)}</div>
       {submitted && <p className={styles.quizReason}>{question.reason}</p>}
     </div>)}</div>
-    <div className={styles.quizFooter}><span>教学自测不计入实验一飞行成绩；通过步骤仍以系统检查结果为准。</span><button type="button" disabled={answered !== diagnosticQuestions.length} onClick={() => setSubmitted(true)}>{submitted ? '已查看解析' : '提交自测 · 查看解析'}</button></div>
+    <div className={styles.quizFooter}><span>本测验计入小节测验模块；完成健康检查并提交自测后才能进入下一步。</span><button type="button" disabled={isSaving || submitted || answered !== diagnosticQuestions.length} onClick={() => { void saveSectionQuiz({ quizId: 'flight-diagnostics', title: '飞控诊断自测', step: 5, answers, questions: diagnosticQuestions.map((question) => ({ id: question.id, correctAnswer: question.correct, explanation: question.reason })) }); }}>{isSaving ? '正在保存自测…' : submitted ? '已提交 · 成绩已冻结' : '提交自测 · 查看解析'}</button></div>
+    {assessmentError && <p role="alert">{assessmentError}</p>}
   </section>;
 }
 
@@ -144,12 +151,15 @@ export function FlightReadinessStep({ stepId }: { stepId: 5 | 6 }) {
   const goToPreviousStep = useExperimentStore((state) => state.goToPreviousStep);
   const goToNextStep = useExperimentStore((state) => state.goToNextStep);
   const environmentReady = useEnvironmentStore((state) => state.startup.phase === 'READY');
-  const canAdvance = environmentReady && (stepId === 5 ? systemCheckStatus === 'PASSED' : preflightPassed && systemCheckStatus === 'PASSED');
+  const learningProgress = useExperimentStore((state) => state.learningProgress);
+  const assessment = useExperimentStore((state) => state.assessment);
+  const learningError = experiment1LearningError(5, { learningProgress, assessment });
+  const canAdvance = !learningError && environmentReady && (stepId === 5 ? systemCheckStatus === 'PASSED' : preflightPassed && systemCheckStatus === 'PASSED');
   return <div className={styles.page}>
     <div className={`${styles.grid} ${stepId === 5 ? styles.diagnosticsGrid : ''}`}>
       {stepId === 5 ? <Diagnostics /> : <Preflight />}
       {stepId === 5 ? <DiagnosticQuiz /> : <SceneOverview sceneId={scene?.id ?? null} sceneName={scene?.name ?? null} />}
     </div>
-    <div className={styles.footer}><span role="status" className={canAdvance ? styles.pass : styles.wait}>{validationMessage ?? (canAdvance ? stepId === 5 ? '飞控与传感器检查通过' : '起飞前安全检查通过' : '请完成当前步骤的全部检查')}</span><StepNavigation canGoBack canGoNext={canAdvance} nextLabel={stepId === 5 ? '下一步：起飞前检查' : '进入基础飞行训练'} onBack={goToPreviousStep} onNext={() => void goToNextStep()}/></div>
+    <div className={styles.footer}><span role="status" className={canAdvance ? styles.pass : styles.wait}>{validationMessage ?? (systemCheckStatus === 'PASSED' && learningError ? learningError : canAdvance ? stepId === 5 ? '飞控与传感器检查通过' : '起飞前安全检查通过' : '请完成当前步骤的全部检查')}</span><StepNavigation canGoBack canGoNext={canAdvance} nextLabel={stepId === 5 ? '下一步：起飞前检查' : '进入基础飞行训练'} onBack={goToPreviousStep} onNext={() => void goToNextStep()}/></div>
   </div>;
 }

@@ -21,6 +21,10 @@ httpClient.interceptors.response.use(
     if (axios.isAxiosError(error) && !error.response) {
       return Promise.reject(new BackendUnavailableError());
     }
+    if (axios.isAxiosError(error) && error.response) {
+      const detail: unknown = (error.response.data as { detail?: unknown } | undefined)?.detail;
+      if (typeof detail === 'string') return Promise.reject(new Error(detail));
+    }
     return Promise.reject(error);
   },
 );

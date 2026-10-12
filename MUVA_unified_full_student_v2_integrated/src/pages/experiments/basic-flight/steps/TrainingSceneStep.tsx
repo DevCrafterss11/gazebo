@@ -1,24 +1,34 @@
 import { useState } from 'react';
 import { Check, Compass, Home, MapPinned, ShieldCheck } from 'lucide-react';
 
+import { experiment1SceneAssets, sceneAssetFor } from '../../../../domain/trainingScenes';
 import { useExperimentStore } from '../../../../stores/experimentStore';
 import type { HomePosition, TrainingScene } from '../../../../types/configuration';
 import { StepNavigation } from '../components/StepNavigation';
 import styles from './TrainingSceneStep.module.css';
 
-const sceneDetails: Record<string, { type: string; goal: string; focus: string; image: string; radius: number }> = {
-  campus: { type: '校园', goal: '基础起飞 · 定点悬停 · 安全返航', focus: '对照开阔起飞区，识别建筑物与返航路径。', image: '/experiment3/scenes/campus-satellite.jpg', radius: 45 },
-  city: { type: '城市', goal: '视距观察 · 安全边界 · 障碍识别', focus: '观察建筑密集区域；飞行训练仍以模拟器的基础任务为准。', image: '/experiment3/scenes/city-satellite.jpg', radius: 40 },
-  mountain: { type: '山地', goal: '环境识别 · 高度管理 · RTL', focus: '注意山地起伏对返航高度判断的影响。', image: '/experiment3/scenes/mountain-satellite.jpg', radius: 50 },
-  airport: { type: '机场', goal: '模拟起降 · 开阔区域 · 空域安全', focus: '仅限前端教学模拟；真实机场及管制空域禁止擅飞。', image: '/experiment3/scenes/airport-satellite.jpg', radius: 50 },
+const sceneDetails: Record<string, { type: string; goal: string; focus: string }> = {
+  campus: { type: '校园', goal: '基础起飞 · 定点悬停 · 安全返航', focus: '对照开阔起飞区，识别建筑物与返航路径。' },
+  city: { type: '城市', goal: '视距观察 · 安全边界 · 障碍识别', focus: '观察建筑密集区域；飞行训练仍以模拟器的基础任务为准。' },
+  mountain: { type: '山地', goal: '环境识别 · 高度管理 · RTL', focus: '注意山地起伏对返航高度判断的影响。' },
+  airport: { type: '机场', goal: '模拟起降 · 开阔区域 · 空域安全', focus: '仅限前端教学模拟；真实机场及管制空域禁止擅飞。' },
+};
+
+interface ScenePresentation { type: string; goal: string; focus: string; image: string; radius: number }
+
+const scenePresentation = (scene: TrainingScene): ScenePresentation | null => {
+  const detail = sceneDetails[scene.id];
+  const asset = sceneAssetFor(scene);
+  if (!detail || !asset) return null;
+  return { ...detail, image: asset.image, radius: asset.safeRadiusMeters };
 };
 
 const sceneOrder = ['campus', 'city', 'mountain', 'airport'];
 
 function ScenePreview({ scene, home }: { scene: TrainingScene | null; home: HomePosition | null }) {
-  const details = scene && sceneDetails[scene.id];
+  const details = scene && scenePresentation(scene);
   if (!scene || !details) return <div className={styles.emptyPreview}>
-    <div className={styles.emptyMosaic} aria-hidden="true">{sceneOrder.map((id) => <img key={id} src={sceneDetails[id]?.image} alt="" />)}</div>
+    <div className={styles.emptyMosaic} aria-hidden="true">{sceneOrder.map((id) => <img key={id} src={experiment1SceneAssets[id]?.image} alt="" />)}</div>
     <div className={styles.emptyMessage}><MapPinned size={34} /><strong>尚未选择训练场</strong><span>从左侧四个场景中选择一个，查看起飞点、目标和安全范围。</span></div>
   </div>;
 
@@ -58,7 +68,7 @@ export function TrainingSceneStep() {
   const displayedScenes = sceneOrder.map((id) => scenes.find((scene) => scene.id === id)).filter((scene): scene is TrainingScene => Boolean(scene));
   const currentScene = selectedScene && sceneDetails[selectedScene.id] ? selectedScene : null;
   const previewScene = previewSceneId ? displayedScenes.find((scene) => scene.id === previewSceneId) ?? null : currentScene;
-  const details = previewScene ? sceneDetails[previewScene.id] : null;
+  const details = previewScene ? scenePresentation(previewScene) : null;
   const home = configuration.homePosition;
   const homeValid = Boolean(home && Number.isFinite(home.latitude) && Math.abs(home.latitude) <= 90 && Number.isFinite(home.longitude) && Math.abs(home.longitude) <= 180 && Number.isFinite(home.altitude));
   const canGoNext = Boolean(currentScene && configuration.selectedSceneId === currentScene.id && homeValid);
@@ -72,7 +82,7 @@ export function TrainingSceneStep() {
       <p>比较不同环境的飞行条件，再选择本次基础飞行训练场。</p>
       {currentScene && <button type="button" className={styles.clearButton} onClick={() => { selectScene(''); setPreviewSceneId(null); }}>取消当前选择，重新比较场景</button>}
       <div className={styles.cards} role="radiogroup" aria-label="实验一训练场景">{displayedScenes.map((scene) => {
-        const detail = sceneDetails[scene.id];
+        const detail = scenePresentation(scene);
         if (!detail) return null;
         const selected = configuration.selectedSceneId === scene.id;
         return <button className={`${styles.card} ${selected ? styles.selected : ''}`} type="button" role="radio" aria-checked={selected} key={scene.id} onClick={() => { selectScene(scene.id); setPreviewSceneId(null); }} onMouseEnter={() => setPreviewSceneId(scene.id)} onMouseLeave={() => setPreviewSceneId(null)} onFocus={() => setPreviewSceneId(scene.id)} onBlur={() => setPreviewSceneId(null)}>

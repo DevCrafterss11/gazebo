@@ -9,7 +9,8 @@ export class MockTelemetryService implements TelemetryService {
   private unsubscribeSimulator: (() => void) | null = null;
 
   async getFlightMap(): Promise<FlightMapSnapshot> {
-    return { home: null, track: [] };
+    const state = mockDroneSimulator.getState();
+    return { home: { ...state.homePosition }, track: [] };
   }
 
   connect(): void {

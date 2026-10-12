@@ -23,7 +23,7 @@ export function RecordDetailPage() {
     return <div className={styles.page}><EmptyState icon={ClipboardCheck} title="未找到实验记录" description={error ?? `记录 ${id} 不存在或已被清理。`} action={<Link to="/records">返回实验记录</Link>} /></div>;
   }
 
-  const { session, result, telemetryHistory, tasks, events } = record;
+  const { session, result, assessment, telemetryHistory, tasks, events } = record;
   const controller = session.configuration.flightController;
   const parameters = session.configuration.flightParameters;
 
@@ -48,7 +48,10 @@ export function RecordDetailPage() {
         <section className={styles.panel}>
           <h2><RadioTower size={18} />评分与关键指标</h2>
           <dl className={styles.definitionList}>
-            <div><dt>训练成绩</dt><dd>{result.score} / 100</dd></div>
+            <div><dt>实验一综合成绩</dt><dd>{result.score.toFixed(1)} / 100</dd></div>
+            <div><dt>实操原始成绩</dt><dd>{assessment?.practicalAssessment?.rawScore.toFixed(1) ?? '暂无'} / 100</dd></div>
+            <div><dt>评分规则版本</dt><dd>{assessment?.scoringVersion ?? '历史记录未保存'}</dd></div>
+            <div><dt>考核状态</dt><dd>{assessment?.status ?? '历史记录未保存'}</dd></div>
             <div><dt>完成率</dt><dd>{result.completionRate}%</dd></div>
             <div><dt>实验时间</dt><dd>{result.durationSeconds}s</dd></div>
             <div><dt>最大高度</dt><dd>{result.maxAltitude.toFixed(1)}m</dd></div>
@@ -56,6 +59,21 @@ export function RecordDetailPage() {
             <div><dt>高度误差</dt><dd>{result.averageAltitudeError.toFixed(2)}m</dd></div>
           </dl>
         </section>
+        {assessment ? <section className={`${styles.panel} ${styles.widePanel}`}>
+          <h2><ClipboardCheck size={18} />综合评分明细</h2>
+          <div className={styles.definitionList}>
+            <div><dt>评分规则版本</dt><dd>{assessment.scoringVersion}</dd></div>
+            <div><dt>Session ID</dt><dd>{assessment.sessionId}</dd></div>
+            <div><dt>综合成绩</dt><dd>{assessment.finalResult?.total ?? assessment.totalScore ?? result.score.toFixed(1)} / 100</dd></div>
+            <div><dt>实操原始 / 加权</dt><dd>{assessment.finalResult ? `${assessment.finalResult.practicalRaw.toFixed(1)} / 100 · ${assessment.finalResult.practicalWeighted.toFixed(1)} / 70` : '暂无'}</dd></div>
+            <div><dt>小节测验原始 / 加权</dt><dd>{assessment.finalResult?.sectionQuizRaw === null || assessment.finalResult?.sectionQuizRaw === undefined ? '未配置' : `${assessment.finalResult.sectionQuizRaw.toFixed(1)} / 100 · ${(assessment.finalResult.sectionQuizWeighted ?? 0).toFixed(1)} / 10`}</dd></div>
+            <div><dt>理论考核原始 / 加权</dt><dd>{assessment.finalResult?.examRaw === null || assessment.finalResult?.examRaw === undefined ? '未交卷' : `${assessment.finalResult.examRaw.toFixed(1)} / 100 · ${(assessment.finalResult.examWeighted ?? 0).toFixed(1)} / 20`}</dd></div>
+            <div><dt>小节测验</dt><dd>{assessment.sectionQuizzes.map((quiz) => `${quiz.title} ${quiz.normalizedScore.toFixed(1)}`).join('；') || '未完成'}</dd></div>
+            <div><dt>理论交卷时间</dt><dd>{assessment.exam.submittedAt ? new Date(assessment.exam.submittedAt).toLocaleString('zh-CN', { hour12: false }) : '未交卷'}</dd></div>
+          </div>
+          <div className={styles.taskChips}>{assessment.practicalAssessment?.scoreItems.map((item) => <span className={item.status === 'COMPLETED' ? styles.done : ''} key={item.id}>{item.label} · {item.actualScore.toFixed(1)} / {item.maxScore}</span>)}</div>
+          {assessment.exam.questionResults.length > 0 ? <details><summary>查看理论试卷答题记录与解析</summary><div className={styles.eventList}>{assessment.exam.questionResults.map((question) => <span key={question.id}>{question.id} · {question.earned > 0 ? '正确' : '错误'} · 学生答案：{question.answer.length > 0 ? question.answer.join('、') : '未作答'} · 标准答案：{question.correctAnswer.join('、')} · {question.explanation}</span>)}</div></details> : null}
+        </section> : null}
         <section className={`${styles.panel} ${styles.widePanel}`}>
           <h2><ListChecks size={18} />实验任务</h2>
           <div className={styles.taskChips}>{tasks.map((task) => <span className={task.status === 'COMPLETED' ? styles.done : ''} key={task.id}>{task.id}. {task.title} · {task.status}</span>)}</div>

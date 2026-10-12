@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { validMapCoordinates } from '../../../../domain/flightMap';
 
 import { useExperimentStore } from '../../../../stores/experimentStore';
 import { useTelemetryStore } from '../../../../stores/telemetryStore';
@@ -21,23 +22,22 @@ export function BasicFlightTrainingStep() {
   const initializeTraining = useTrainingStore((state) => state.initialize);
   const trainingResult = useTrainingStore((state) => state.result);
   const connectTelemetry = useTelemetryStore((state) => state.connect);
+  const actualHome = useTelemetryStore((state) => state.mapHome);
 
   useEffect(() => {
     connectTelemetry();
     // sessionId is an in-memory runtime value and is intentionally not part
     // of the persisted configuration. After a page refresh, the experiment
     // can still resume from its saved step and must keep processing telemetry.
-    if (!selectedDrone || !selectedScene || !configuration.homePosition) return;
+    if (!selectedDrone || !selectedScene || !validMapCoordinates(actualHome)) return;
     initializeTraining(
       configuration.flightParameters,
-      { latitude: configuration.homePosition.latitude, longitude: configuration.homePosition.longitude },
+      { latitude: actualHome.latitude, longitude: actualHome.longitude },
       selectedDrone.name,
       selectedScene.name,
-      // Keep the training page open after all basic tasks are complete. The
-      // user can run a custom route before explicitly opening the result.
-      () => {},
+      (completedResult) => { void completeExperiment(completedResult); },
     );
-  }, [configuration.flightParameters, configuration.homePosition, connectTelemetry, initializeTraining, selectedDrone, selectedScene]);
+  }, [actualHome, completeExperiment, configuration.flightParameters, connectTelemetry, initializeTraining, selectedDrone, selectedScene]);
 
   return (
     <div className={styles.page}>

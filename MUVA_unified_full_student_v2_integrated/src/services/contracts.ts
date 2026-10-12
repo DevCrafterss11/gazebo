@@ -5,11 +5,14 @@ import type { ExperimentResult } from '../types/result';
 import type { CreateExperimentSessionInput, ExperimentSession } from '../types/session';
 import type { SimulatedDroneState } from '../types/simulator';
 import type { FlightMapSnapshot, TelemetryConnectionState, TelemetrySample } from '../types/telemetry';
+import type { FlightMapView } from '../types/flightMap';
 import type { Mission, MissionUpload } from '../types/mission';
 import type { ExperimentRecord } from '../types/record';
 import type { CheckOutcome } from '../types/configuration';
 import type { FlightSafetyContext } from '../domain/flightSafety';
 import type { ExperimentProgressEvent } from '../types/experiment';
+import type { ExperimentOneAssessment } from '../types/experiment1Assessment';
+import type { SecurityConfig, SecurityEvidence, SecurityJudgment, SecurityReport, SecurityRun, SecurityTelemetry } from '../types/securityExperiment';
 
 export interface DroneService {
   getDroneModels(): Promise<DroneModel[]>;
@@ -21,9 +24,19 @@ export interface SceneService {
 
 export interface PersistedExperimentState {
   version: 2;
+  flightMapView?: FlightMapView | null;
+  progressId?: string;
+  learningProgress?: {
+    learnedPartIds: string[];
+    quizAnswers: Record<string, Record<string, string>>;
+  };
   currentStep: number;
   completedSteps: number[];
   configuration: ExperimentConfiguration;
+  sessionId?: string | null;
+  session?: ExperimentSession | null;
+  result?: ExperimentResult | null;
+  assessment?: ExperimentOneAssessment | null;
 }
 
 export interface PreflightCheckContext {
@@ -43,12 +56,15 @@ export interface ExperimentService {
   saveRecord(record: ExperimentRecord): Promise<void>;
   listRecords(): Promise<ExperimentRecord[]>;
   getRecord(recordId: string): Promise<ExperimentRecord | null>;
+  saveAssessment(assessment: ExperimentOneAssessment): Promise<void>;
+  loadAssessment(sessionId: string): Promise<ExperimentOneAssessment | null>;
   clearConfiguration(): Promise<void>;
-  runSensorCheck(onUpdate: (items: SensorCheckItem[]) => void, onProgress?: (event: ExperimentProgressEvent) => void): Promise<SensorCheckItem[]>;
+  runSensorCheck(onUpdate: (items: SensorCheckItem[]) => void, onProgress?: (event: ExperimentProgressEvent) => void, signal?: AbortSignal): Promise<SensorCheckItem[]>;
   runPreflightCheck(
     context: PreflightCheckContext,
     onUpdate: (items: PreflightChecklistItem[]) => void,
     onProgress?: (event: ExperimentProgressEvent) => void,
+    signal?: AbortSignal,
   ): Promise<PreflightChecklistItem[]>;
 }
 
@@ -109,4 +125,20 @@ export interface TelemetryService {
   disconnect(): void;
   subscribe(handler: TelemetryHandler): () => void;
   subscribeToConnectionState(handler: TelemetryConnectionHandler): () => void;
+}
+
+export type SecurityTelemetryHandler = (sample: SecurityTelemetry) => void;
+export interface SecurityExperimentService {
+  createRun(config: SecurityConfig): Promise<SecurityRun>;
+  getRun(runId: string): Promise<SecurityRun | null>;
+  listReports(): Promise<SecurityReport[]>;
+  startBaseline(runId: string): Promise<SecurityRun>;
+  startAnomaly(runId: string): Promise<SecurityRun>;
+  submitJudgment(runId: string, judgment: SecurityJudgment, evidenceIds: string[], requestId: string): Promise<SecurityRun>;
+  isolate(runId: string): Promise<SecurityRun>;
+  stopInjection(runId: string): Promise<SecurityRun>;
+  verifyRecovery(runId: string): Promise<SecurityRun>;
+  finish(runId: string, reflection: string): Promise<SecurityReport>;
+  abort(runId: string): Promise<SecurityReport>;
+  subscribe(runId: string, onSample: SecurityTelemetryHandler, onEvidence: (items: SecurityEvidence[]) => void): () => void;
 }

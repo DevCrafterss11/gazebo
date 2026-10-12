@@ -15,6 +15,7 @@ import { AdminSettingsPage } from '../pages/admin/AdminSettingsPage';
 import { AdminUsersPage } from '../pages/admin/AdminUsersPage';
 import { BasicFlightPage } from '../pages/experiments/basic-flight/BasicFlightPage';
 import { ExperimentComingSoonPage } from '../pages/experiments/ExperimentComingSoonPage';
+import { SecurityExperimentPage } from '../pages/experiments/security/SecurityExperimentPage';
 import { SwarmExperimentPage } from '../pages/experiments/swarm/SwarmExperimentPage';
 import { SwarmRecordPage } from '../pages/experiments/swarm/SwarmRecordPage';
 import { ExperimentsPage } from '../pages/experiments/ExperimentsPage';
@@ -72,7 +73,7 @@ export const router = createBrowserRouter([
           { path: 'records/swarm/:id', element: studentOnly(<SwarmRecordPage />) },
           { path: 'experiments/mission', element: studentOnly(assessmentSource === 'real' ? <RealAssessmentPage /> : <AssessmentPage />) },
           { path: 'records/assessment/:id', element: studentOnly(<AssessmentRecordPage />) },
-          { path: 'experiments/security', element: studentOnly(<ExperimentComingSoonPage />) },
+          { path: 'experiments/security', element: studentOnly(<SecurityExperimentPage />) },
           { path: 'experiments/custom-security', element: studentOnly(<ExperimentComingSoonPage />) },
           { path: 'flight', element: teacherOrStudent(<FlightPage />) },
           { path: 'records', element: studentOnly(<RecordsPage />) },

@@ -11,12 +11,17 @@ import type {
 } from '../../types/configuration';
 import type { ExperimentResult } from '../../types/result';
 import type { ExperimentProgressEvent } from '../../types/experiment';
+import { waitForCheck } from '../checkSequence';
 import type { ExperimentRecord } from '../../types/record';
 import type { CreateExperimentSessionInput, ExperimentSession } from '../../types/session';
 import type { ExperimentService, PersistedExperimentState, PreflightCheckContext } from '../contracts';
+import type { ExperimentOneAssessment } from '../../types/experiment1Assessment';
+import { normalizeExperiment1Assessment } from '../../domain/experiment1Assessment';
+import { validFlightMapView } from '../../domain/flightMap';
 
 const storageKey = 'muva-experiment-1';
 const recordsStorageKey = 'muva-experiment-records';
+const assessmentStorageKey = 'muva-experiment1-assessments';
 const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -34,18 +39,25 @@ const migrateDraft = (value: unknown): PersistedExperimentState | null => {
   if (!configuration.flightController || !configuration.flightParameters) return null;
   const rawStep = typeof value.currentStep === 'number' ? value.currentStep : 1;
   if (value.version === 2) {
-    const currentStep = Math.max(1, Math.min(4, rawStep));
+    const currentStep = Math.max(1, Math.min(8, rawStep));
     return {
       version: 2,
+      flightMapView: validFlightMapView(value.flightMapView) ? value.flightMapView : null,
+      progressId: typeof value.progressId === 'string' ? value.progressId : undefined,
+      learningProgress: isRecord(value.learningProgress) ? value.learningProgress as PersistedExperimentState['learningProgress'] : undefined,
       currentStep,
       completedSteps: Array.isArray(value.completedSteps)
-        ? value.completedSteps.filter((step): step is number => typeof step === 'number' && step < currentStep)
+        ? [...new Set(value.completedSteps.filter((step): step is number => typeof step === 'number' && Number.isInteger(step) && step >= 1 && step <= 8))]
         : [],
       configuration: {
         ...configuration as ExperimentConfiguration,
         sensors: createUncheckedSensors(),
         homePosition: configuration.homePosition ?? null,
       },
+      sessionId: typeof value.sessionId === 'string' ? value.sessionId : null,
+      session: isRecord(value.session) ? value.session as unknown as ExperimentSession : null,
+      result: isRecord(value.result) ? value.result as unknown as ExperimentResult : null,
+      assessment: isRecord(value.assessment) ? value.assessment as unknown as ExperimentOneAssessment : null,
     };
   }
 
@@ -68,7 +80,7 @@ export class MockExperimentService implements ExperimentService {
   async createExperiment(input: CreateExperimentSessionInput): Promise<ExperimentSession> {
     const createdAt = new Date().toISOString();
     const session: ExperimentSession = {
-      id: `muva-exp-${Date.now()}`,
+      id: `muva-exp-${crypto.randomUUID()}`,
       name: input.name,
       drone: input.drone,
       scene: input.scene,
@@ -91,7 +103,10 @@ export class MockExperimentService implements ExperimentService {
       return null;
     }
     try {
-      return migrateDraft(JSON.parse(serialized) as unknown);
+      const draft = migrateDraft(JSON.parse(serialized) as unknown);
+      if (draft?.assessment && draft.sessionId) draft.assessment = normalizeExperiment1Assessment(draft.assessment, draft.sessionId);
+      if (draft?.session && draft.session.id === draft.sessionId) this.sessions.set(draft.session.id, draft.session);
+      return draft;
     } catch {
       localStorage.removeItem(storageKey);
       return null;
@@ -143,15 +158,40 @@ export class MockExperimentService implements ExperimentService {
     return records.find((record) => record.id === recordId) ?? null;
   }
 
+  async saveAssessment(assessment: ExperimentOneAssessment): Promise<void> {
+    try {
+      const serialized = localStorage.getItem(assessmentStorageKey);
+      const parsed: unknown = serialized ? JSON.parse(serialized) : {};
+      const assessments: Record<string, ExperimentOneAssessment> = isRecord(parsed) ? parsed as Record<string, ExperimentOneAssessment> : {};
+      assessments[assessment.sessionId] = assessment;
+      localStorage.setItem(assessmentStorageKey, JSON.stringify(assessments));
+    } catch (error: unknown) {
+      throw new Error(error instanceof Error ? `评分记录保存失败：${error.message}` : '评分记录保存失败');
+    }
+  }
+
+  async loadAssessment(sessionId: string): Promise<ExperimentOneAssessment | null> {
+    const serialized = localStorage.getItem(assessmentStorageKey);
+    if (!serialized) return null;
+    try {
+      const assessments: unknown = JSON.parse(serialized);
+      if (!isRecord(assessments)) return null;
+      const assessment = assessments[sessionId];
+      return isRecord(assessment) && assessment.sessionId === sessionId ? normalizeExperiment1Assessment(assessment as unknown as ExperimentOneAssessment, sessionId) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async clearConfiguration(): Promise<void> {
     localStorage.removeItem(storageKey);
   }
 
-  async runSensorCheck(onUpdate: (items: SensorCheckItem[]) => void, onProgress?: (event: ExperimentProgressEvent) => void): Promise<SensorCheckItem[]> {
+  async runSensorCheck(onUpdate: (items: SensorCheckItem[]) => void, onProgress?: (event: ExperimentProgressEvent) => void, signal?: AbortSignal): Promise<SensorCheckItem[]> {
     const sensors = createUncheckedSensors();
     onUpdate(cloneSensors(sensors));
 
-    await delay(280);
+    await waitForCheck(280, signal);
 
     for (let index = 0; index < sensors.length; index += 1) {
       const current = sensors[index];
@@ -162,7 +202,7 @@ export class MockExperimentService implements ExperimentService {
       onProgress?.({ type: 'sensor_check', step: current.name, status: 'checking' });
       current.details = ['检查中...'];
       onUpdate(cloneSensors(sensors));
-      await delay(520);
+      await waitForCheck(520, signal);
       current.status = 'PASS';
       onProgress?.({ type: 'sensor_check', step: current.name, status: 'pass' });
       current.details = [...healthySensorDetails[current.id]];
@@ -176,6 +216,7 @@ export class MockExperimentService implements ExperimentService {
     context: PreflightCheckContext,
     onUpdate: (items: PreflightChecklistItem[]) => void,
     onProgress?: (event: ExperimentProgressEvent) => void,
+    signal?: AbortSignal,
   ): Promise<PreflightChecklistItem[]> {
     const items = createPreflightChecklist();
     onUpdate(clonePreflight(items));
@@ -183,7 +224,7 @@ export class MockExperimentService implements ExperimentService {
       item.status = 'CHECKING';
       onProgress?.({ type: 'preflight_check', step: item.label, status: 'checking' });
       onUpdate(clonePreflight(items));
-      await delay(360);
+      await waitForCheck(360, signal);
       const reason = getPreflightFailureReason(item.id, context);
       item.status = reason ? 'FAIL' : 'PASS';
       onProgress?.({ type: 'preflight_check', step: item.label, status: reason ? 'fail' : 'pass' });

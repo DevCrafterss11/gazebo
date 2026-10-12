@@ -4,6 +4,7 @@
   grid-template-columns: minmax(250px, 1.35fr) minmax(190px, 0.92fr) minmax(210px, 1fr);
   gap: var(--space-3);
   height: 100%;
+  min-height: 0;
   padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
@@ -12,6 +13,7 @@
 .commandGroup {
   position: relative;
   min-width: 0;
+  min-height: 0;
   padding: 22px var(--space-2) var(--space-2);
   border: 1px solid rgb(22 83 123 / 52%);
   border-radius: var(--radius-sm);
@@ -76,6 +78,7 @@
 .commandGroup {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
@@ -85,6 +88,7 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
+  min-height: 0;
   border: 1px solid;
   border-radius: var(--radius-sm);
   color: #fff;

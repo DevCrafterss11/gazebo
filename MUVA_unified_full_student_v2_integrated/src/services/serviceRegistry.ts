@@ -6,6 +6,7 @@ import type {
   MissionService,
   SceneService,
   TelemetryService,
+  SecurityExperimentService,
 } from './contracts';
 import {
   ApiDroneService,
@@ -24,6 +25,9 @@ import { MockMissionService } from './mock/MockMissionService';
 import { MockSceneService } from './mock/MockSceneService';
 import { MockTelemetryService } from './mock/MockTelemetryService';
 import { MockSwarmRuntime } from './mock/MockSwarmRuntime';
+import { ApiSwarmService } from './api/ApiSwarmService';
+import { MockSecurityExperimentService } from './mock/MockSecurityExperimentService';
+import { ApiSecurityExperimentService } from './api/ApiSecurityExperimentService';
 import type { SwarmService } from './swarmContract';
 import { assessmentRuntime, type AssessmentRuntime } from './mock/MockAssessmentRuntime';
 import { MockDroneAdapter, RealMavlinkAdapter, assessmentSource, type AssessmentDroneAdapter } from './assessment/droneAdapter';
@@ -39,6 +43,7 @@ export interface RuntimeCapabilities {
 }
 
 const dataSource: DataSource = import.meta.env.VITE_DATA_SOURCE === 'api' ? 'api' : 'mock';
+const swarmService: SwarmService = import.meta.env.VITE_SWARM_DATA_SOURCE === 'api' ? new ApiSwarmService() : new MockSwarmRuntime();
 
 export interface ServiceRegistry {
   dataSource: DataSource;
@@ -50,6 +55,7 @@ export interface ServiceRegistry {
   missions: MissionService;
   scenes: SceneService;
   telemetry: TelemetryService;
+  security: SecurityExperimentService;
   swarm: SwarmService;
   assessment: AssessmentRuntime;
   assessmentAdapter: AssessmentDroneAdapter;
@@ -66,7 +72,8 @@ export const services: ServiceRegistry = dataSource === 'api'
       missions: new ApiMissionService(),
       scenes: new ApiSceneService(),
       telemetry: new ApiTelemetryService(),
-      swarm: new MockSwarmRuntime(),
+      security: new ApiSecurityExperimentService(),
+      swarm: swarmService,
       assessment: assessmentRuntime,
       assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),
     }
@@ -80,7 +87,8 @@ export const services: ServiceRegistry = dataSource === 'api'
       missions: new MockMissionService(),
       scenes: new MockSceneService(),
       telemetry: new MockTelemetryService(),
-      swarm: new MockSwarmRuntime(),
+      security: new MockSecurityExperimentService(),
+      swarm: swarmService,
       assessment: assessmentRuntime,
       assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),
     };

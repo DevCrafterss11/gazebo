@@ -8,14 +8,15 @@ import styles from './ExperimentLayout.module.css';
 export function ExperimentLayout() {
   const experiment = useExperimentStore((state) => state.experiment);
   const goToStep = useExperimentStore((state) => state.goToStep);
+  const isExperimentActive = useExperimentStore((state) => state.isExperimentActive);
 
   return (
-    <div className={styles.experimentLayout}>
+    <div className={`${styles.experimentLayout} ${!isExperimentActive ? styles.entryLayout : ''}`}>
       <ExperimentHeader
         title={experiment.title}
         subtitle={experiment.subtitle}
       />
-      <ExperimentStepper steps={experiment.steps} onStepSelect={goToStep} />
+      {isExperimentActive && <ExperimentStepper steps={experiment.steps} onStepSelect={goToStep} />}
       <div className={styles.experimentBody}>
         <Outlet />
       </div>

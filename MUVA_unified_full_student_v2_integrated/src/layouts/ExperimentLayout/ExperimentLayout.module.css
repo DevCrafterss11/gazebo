@@ -5,6 +5,10 @@
   height: 100%;
 }
 
+.entryLayout {
+  grid-template-rows: 84px minmax(0, 1fr);
+}
+
 .experimentHeader {
   position: relative;
   display: flex;
@@ -205,8 +209,13 @@
   overflow: hidden;
 }
 
+.entryLayout .experimentBody {
+  overflow: auto;
+}
+
 @media (max-width: 1500px) {
   .experimentLayout { grid-template-rows: 78px 56px minmax(0, 1fr); }
+  .entryLayout { grid-template-rows: 78px minmax(0, 1fr); }
   .headerCopy h1 { font-size: 23px; }
   .stepTitle { font-size: 11px; }
   .step { gap: 5px; }

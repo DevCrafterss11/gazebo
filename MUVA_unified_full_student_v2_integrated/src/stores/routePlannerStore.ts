@@ -30,6 +30,7 @@ interface RoutePlannerState {
 }
 
 let waypointSequence = 0;
+let executionSequence = 0;
 
 const clampAltitude = (value: number): number => Math.min(120, Math.max(2, Number.isFinite(value) ? value : 10));
 
@@ -54,7 +55,10 @@ export const useRoutePlannerStore = create<RoutePlannerState>((set, get) => ({
     error: null,
   })),
   close: () => set({ isOpen: false }),
-  cancel: () => set({ isOpen: false, phase: 'IDLE', waypoints: [], error: null }),
+  cancel: () => {
+    executionSequence += 1;
+    set({ isOpen: false, phase: 'IDLE', waypoints: [], error: null });
+  },
   addWaypoint: (latitude, longitude) => set((state) => {
     if ((state.phase !== 'PLANNING' && state.phase !== 'ERROR') || state.waypoints.length >= 20) return state;
     waypointSequence += 1;
@@ -93,15 +97,19 @@ export const useRoutePlannerStore = create<RoutePlannerState>((set, get) => ({
       { sequence: waypoints.length + 1, latitude: home.latitude, longitude: home.longitude, altitudeMeters: 0 },
     ];
 
+    const sequence = ++executionSequence;
     try {
       set({ phase: 'UPLOADING', error: null });
       await services.missions.uploadMission({ name: `自定义航线 ${new Date().toLocaleTimeString('zh-CN')}`, waypoints: missionWaypoints });
+      if (sequence !== executionSequence) return;
       if (!armed) {
         set({ phase: 'ARMING' });
         await services.flight.arm();
+        if (sequence !== executionSequence) return;
       }
       set({ phase: 'STARTING' });
       await services.missions.startMission();
+      if (sequence !== executionSequence) return;
       set({ phase: 'RUNNING', isOpen: false, error: null });
       useNotificationStore.getState().addNotification({
         title: '自定义航线已启动',
@@ -109,6 +117,7 @@ export const useRoutePlannerStore = create<RoutePlannerState>((set, get) => ({
         kind: 'training',
       });
     } catch (error: unknown) {
+      if (sequence !== executionSequence) return;
       set({ phase: 'ERROR', error: errorMessage(error) });
     }
   },

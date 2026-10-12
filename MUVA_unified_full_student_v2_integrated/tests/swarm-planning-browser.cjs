@@ -1,0 +1,531 @@
+const assert = require('node:assert/strict');
+const { mkdirSync, writeFileSync } = require('node:fs');
+const { chromium } = require(process.env.PLAYWRIGHT_CORE_PATH || 'playwright-core');
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true,
+    args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl'] });
+  const output = process.env.MUVA_SCREENSHOT_DIR || '/tmp/muva-swarm-planning';
+  mkdirSync(output, { recursive: true });
+  const results = [];
+  const errors = [];
+  const tiles = [];
+  const base = process.env.MUVA_TEST_URL || 'http://127.0.0.1:5173';
+  const generateRoutes = async (target, back = true) => {
+    assert.equal(await target.getByRole('button', { name: '生成覆盖航线', exact: true }).count(), 0, '步骤2不能生成航线');
+    assert.equal(await target.getByRole('button', { name: '确认规划并进入下一步', exact: true }).isDisabled(), false, '步骤2不以生成航线为前置条件');
+    await target.getByRole('button', { name: '确认规划并进入下一步', exact: true }).click();
+    const draft = await target.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')));
+    assert.equal(draft.step, 3);
+    if (!draft.missions.length) assert.equal(await target.getByRole('button', { name: '确认航线并进入下一步', exact: true }).isDisabled(), true);
+    await target.getByRole('button', { name: '生成航线', exact: true }).click();
+    assert.equal(await target.getByLabel('机群区域规划交互地图', { exact: true }).getAttribute('data-visible-mission-count'), '3');
+    if (back) await target.getByRole('navigation', { name: '实验步骤' }).getByRole('button', { name: /区域规划/ }).click();
+  };
+  const deliverRoutes = async (target) => {
+    assert.equal(await target.getByRole('button', { name: '下发航线', exact: true }).isDisabled(), true);
+    assert.equal(await target.getByRole('button', { name: '确认航线并进入下一步', exact: true }).isDisabled(), true);
+    const before = await target.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot);
+    await target.getByRole('button', { name: '检查航线', exact: true }).click();
+    await target.locator('[data-delivery-status="CHECKED"]').waitFor();
+    assert.equal(await target.getByRole('button', { name: '确认航线并进入下一步', exact: true }).isDisabled(), true);
+    await target.getByRole('button', { name: '下发航线', exact: true }).click();
+    await target.locator('[data-delivery-status="UPLOADED"]').waitFor();
+    const uploaded = await target.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')));
+    assert.equal(uploaded.delivery.receipts.length, 3);
+    assert.ok(uploaded.delivery.receipts.every((receipt) => receipt.status === 'ACCEPTED' && receipt.planId === uploaded.delivery.planId));
+    assert.equal(await target.getByText('✓ 航线接收成功', { exact: true }).count(), 3);
+    assert.equal(uploaded.snapshot.status, 'PLANNED');
+    assert.equal(uploaded.snapshot.elapsed, 0);
+    assert.deepEqual(uploaded.snapshot.drones, before.drones, '检查/下发不能启动飞行或移动无人机');
+    assert.equal(await target.getByRole('button', { name: '确认航线并进入下一步', exact: true }).isDisabled(), false);
+  };
+  try {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('response', (response) => {
+      if (response.url().includes('World_Imagery/MapServer/tile/')) tiles.push({ url: response.url(), status: response.status() });
+    });
+    page.on('dialog', (dialog) => dialog.accept());
+    const assertMapLayout = async (step) => {
+      await page.waitForTimeout(300);
+      const bounds = await page.getByLabel('机群区域规划交互地图', { exact: true }).evaluate((element) => {
+        const panel = element.closest('section');
+        let workspace = panel.parentElement;
+        while (workspace && !workspace.className.includes('workspace')) workspace = workspace.parentElement;
+        return { map: element.getBoundingClientRect().toJSON(), workspace: workspace.getBoundingClientRect().toJSON(), overflow: document.documentElement.scrollWidth > innerWidth };
+      });
+      assert.ok(bounds.map.width / bounds.workspace.width > .55, `步骤 ${step} 地图宽度不足：${JSON.stringify(bounds)}`);
+      assert.ok(bounds.map.height > 400, `步骤 ${step} 地图高度不足：${JSON.stringify(bounds)}`);
+      assert.equal(bounds.overflow, false);
+      results.push({ test: `步骤 ${step} 20/60/20 大地图布局`, width: bounds.map.width, height: bounds.map.height });
+      await page.screenshot({ path: `${output}/stage-${step}.png`, fullPage: true });
+    };
+    await page.goto(`${base}/login`);
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.setItem('muva-mock-user', 'signed-in');
+      sessionStorage.setItem('muva-user-role', 'student');
+      sessionStorage.setItem('muva-username', 'swarm-ui-test');
+      sessionStorage.setItem('muva-auth-token', 'mock-token-student');
+    });
+    await page.goto(`${base}/experiments/swarm`);
+    await page.getByRole('button', { name: '开始新实验' }).click();
+    assert.equal(await page.getByLabel('机群区域规划交互地图', { exact: true }).getAttribute('data-drone-count'), '0');
+    assert.equal(await page.getByLabel('机群区域规划交互地图', { exact: true }).getAttribute('data-planning-stage'), 'empty');
+    await assertMapLayout(1);
+    await page.getByRole('button', { name: '确认配置并进入下一步' }).click();
+    const map = page.getByLabel('机群区域规划交互地图', { exact: true });
+    await page.waitForFunction(() => document.querySelector('[data-basemap-status="ready"]'), null, { timeout: 45000 });
+    assert.ok(tiles.some((tile) => tile.status === 200), '收到真实卫星瓦片');
+    assert.equal(await map.getAttribute('data-drone-count'), '0');
+    const canvas = map.locator('.maplibregl-canvas');
+    const box = await canvas.boundingBox();
+    const click = (east, north) => page.mouse.click(box.x + box.width * east, box.y + box.height * north);
+    await page.getByRole('button', { name: '添加禁飞区', exact: true }).click();
+    await click(.82, .32); await click(.91, .47);
+    await page.getByRole('button', { name: '绘制区域', exact: true }).click();
+    await click(.22, .32);
+    const initialScale = await map.locator('.maplibregl-ctrl-scale').innerText();
+    await page.mouse.dblclick(box.x + box.width * .61, box.y + box.height * .32);
+    await page.waitForTimeout(400);
+    assert.equal(await map.locator('.maplibregl-ctrl-scale').innerText(), initialScale, '绘制中双击不触发地图缩放');
+    assert.equal(await map.getAttribute('data-draft-vertex-count'), '2');
+    assert.equal(await page.getByRole('button', { name: '完成绘制', exact: true }).isDisabled(), true);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).area), null);
+    await page.screenshot({ path: `${output}/drawing-connected-boundary.png`, fullPage: true });
+    await click(.61, .7);
+    await page.mouse.dblclick(box.x + box.width * .22, box.y + box.height * .7);
+    const completedBoundary = await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).area.polygon.coordinates[0]);
+    assert.equal(completedBoundary.length, 5, '双击最后一点只添加一次，四点边界加一个闭合点');
+    assert.equal(new Set(completedBoundary.slice(0, -1).map((point) => JSON.stringify(point))).size, 4);
+    assert.deepEqual(completedBoundary[0], completedBoundary.at(-1));
+    results.push({ test: '双击完成自主绘制，不重复添加末顶点，少于三个点不能闭合', passed: true });
+    assert.equal(await map.getAttribute('data-planning-stage'), 'drawn');
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '0');
+    assert.equal(await map.getByText(/^[ABC]区/).count(), 0);
+    await page.screenshot({ path: `${output}/drawn-before-generation.png`, fullPage: true });
+    results.push({ test: '新实验空白，自主绘制后只显示任务边界，未自动分区或生成航线', passed: true });
+    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: '设置起降点', exact: true }).click();
+    await click(.15, .88);
+    await page.getByRole('button', { name: '初始化机群', exact: true }).click();
+    assert.equal(await map.getAttribute('data-drone-count'), '3');
+    const initialFleet = await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot.drones);
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const state = useSwarmStore.getState(); state.setHome(state.run.config.homePosition);
+    });
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot.drones), initialFleet, '设置规划 Home 不重置或移动无人机');
+    const homeOverlap = await page.getByLabel('Home 起降点', { exact: true }).evaluate((element) => {
+      const rect = element.querySelector('span').getBoundingClientRect();
+      return [...document.querySelectorAll('[aria-label$="无人机位置"] svg')].some((drone) => {
+        const bounds = drone.getBoundingClientRect(); return rect.left < bounds.right && rect.right > bounds.left && rect.top < bounds.bottom && rect.bottom > bounds.top;
+      });
+    });
+    assert.equal(homeOverlap, false, 'Home 图标错位展示，不挡住 UAV');
+    assert.equal(await page.getByRole('button', { name: '确认规划并进入下一步', exact: true }).isDisabled(), false);
+    await generateRoutes(page);
+    const planned = await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const { run, error } = useSwarmStore.getState();
+      return { error, missions: run.missions.length, area: run.area.area, noFly: run.planning.noFlyZones.length,
+        home: run.config.homePosition, segments: run.missions.reduce((sum, mission) => sum + mission.coverageSegments.length, 0) };
+    });
+    assert.equal(planned.error, null);
+    assert.equal(planned.missions, 3);
+    assert.equal(planned.noFly, 1);
+    assert.ok(planned.home && planned.area > 100 && planned.segments > 3);
+    results.push({ test: '逐点闭合矩形、禁飞区、Home，初始化及航线生成', ...planned });
+    assert.equal(await map.getAttribute('data-planning-stage'), 'planned');
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '3');
+    await page.getByRole('button', { name: '绘制区域', exact: true }).click();
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '0');
+    assert.equal(await map.getByText(/^[ABC]区/).count(), 0);
+    await map.press('Escape');
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '3');
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const state = useSwarmStore.getState(); state.setArea(state.run.area.polygon.coordinates[0].slice(0, -1));
+    });
+    assert.equal(await map.getAttribute('data-planning-stage'), 'drawn');
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '0');
+    assert.equal(await map.getByText(/^[ABC]区/).count(), 0);
+    await generateRoutes(page);
+    assert.equal(await map.getAttribute('data-visible-mission-count'), '3');
+    results.push({ test: '生成后才显示分区航线，重新绘制时隐藏旧图层，取消后恢复', passed: true });
+    await page.getByRole('button', { name: '保存规划', exact: true }).click();
+    assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).planning.savedAt));
+    await page.screenshot({ path: `${output}/planning-1920.png`, fullPage: true });
+    await page.getByRole('button', { name: '定位 UAV-02', exact: true }).click();
+    await page.waitForTimeout(800);
+    const marker = await page.getByLabel('UAV-02 无人机位置', { exact: true }).boundingBox();
+    const focusedBox = await canvas.boundingBox();
+    await page.screenshot({ path: `${output}/focused-uav.png`, fullPage: true });
+    assert.ok(Math.abs(marker.x + marker.width / 2 - focusedBox.x - focusedBox.width / 2) < 3, JSON.stringify({ marker, focusedBox }));
+    assert.ok(Math.abs(marker.y + marker.height / 2 - focusedBox.y - focusedBox.height / 2) < 3, JSON.stringify({ marker, focusedBox }));
+    results.push({ test: '无人机定位到地图中心', passed: true });
+    await page.getByRole('button', { name: '回到任务区域', exact: true }).click();
+    await page.waitForTimeout(800);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: `${output}/planning-1440.png`, fullPage: true });
+    const layout = await page.evaluate(() => {
+      const element = document.querySelector('[aria-label="任务配置与实验提示"]').parentElement;
+      const bounds = [...element.children].slice(0, 3).map((child) => {
+        const rect = child.getBoundingClientRect(); return { width: rect.width, height: rect.height, right: rect.right };
+      });
+      return { bounds, width: innerWidth, horizontalOverflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    assert.ok(layout.bounds[1].width > layout.bounds[0].width * 2);
+    assert.ok(layout.bounds[2].right <= layout.width + 1);
+    assert.equal(layout.horizontalOverflow, false);
+    const thirdDroneVisible = await page.getByRole('button', { name: '定位 UAV-03', exact: true }).evaluate((button) => {
+      const body = button.parentElement.parentElement;
+      return { visible: button.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom + 1,
+        button: button.getBoundingClientRect().toJSON(), body: body.getBoundingClientRect().toJSON(),
+        panel: body.parentElement.getBoundingClientRect().toJSON(), bodyStyle: { height: getComputedStyle(body).height, padding: getComputedStyle(body).padding } };
+    });
+    assert.ok(thirdDroneVisible.visible, `1440 三架无人机信息完整可见：${JSON.stringify(thirdDroneVisible)}`);
+    results.push({ test: '1440 布局无横向溢出，地图优先', ...layout });
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[data-drone-count="3"]'));
+    const restored = await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const { run } = useSwarmStore.getState();
+      return { missions: run.missions.length, noFly: run.planning.noFlyZones.length, saved: !!run.planning.savedAt, step: run.step };
+    });
+    assert.deepEqual(restored, { missions: 3, noFly: 1, saved: true, step: 2 });
+    await page.getByRole('button', { name: '确认规划并进入下一步', exact: true }).click();
+    await page.getByRole('button', { name: '确认航线并进入下一步', exact: true }).waitFor();
+    await assertMapLayout(3);
+    assert.equal(await map.getAttribute('data-complete-route-count'), '3');
+    assert.ok(await map.locator('[data-waypoint-number]').count() > 3, '全部完整路径默认显示航点编号');
+    assert.ok(await map.getByLabel('全部编号', { exact: true }).isChecked());
+    for (const droneId of ['UAV-01', 'UAV-02', 'UAV-03']) assert.ok(await map.locator(`[data-waypoint-drone="${droneId}"]`).count() > 2);
+    await map.getByLabel('全部编号', { exact: true }).uncheck();
+    await map.getByRole('button', { name: '仅所选航线', exact: true }).click();
+    assert.equal(await map.getAttribute('data-complete-route-count'), '1');
+    await map.getByRole('button', { name: '全部完整航线', exact: true }).click();
+    await map.getByRole('button', { name: '回到任务区域', exact: true }).click();
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: `${output}/numbered-complete-routes-1440.png`, fullPage: true });
+    results.push({ test: '完整Home入场/扫描/返航路径、航点编号与全部/所选预览', passed: true });
+    const gated = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const state = useSwarmStore.getState(); state.confirmPlan(); state.command('takeoff');
+      return { step: useSwarmStore.getState().run.step, status: useSwarmStore.getState().run.snapshot.status, error: useSwarmStore.getState().error };
+    });
+    assert.equal(gated.step, 3); assert.equal(gated.status, 'PLANNED'); assert.match(gated.error, /下发/);
+    await deliverRoutes(page);
+    const thirdReceiptVisible = await page.getByRole('button', { name: '定位 UAV-03 航线任务', exact: true }).evaluate((button) => {
+      const body = button.parentElement.parentElement;
+      return button.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom + 1;
+    });
+    assert.ok(thirdReceiptVisible, '1440三架无人机完整任务与接收回执必须默认可见');
+    await page.screenshot({ path: `${output}/uploaded-three-receipts.png`, fullPage: true });
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    await page.locator('[data-delivery-status="UPLOADED"]').waitFor();
+    assert.equal(await page.getByText('✓ 航线接收成功', { exact: true }).count(), 3);
+    results.push({ test: '检查→下发逐机回执→解锁确认，禁止提前起飞，刷新保留接收结果', passed: true });
+    await page.getByRole('button', { name: '确认航线并进入下一步', exact: true }).click();
+    await assertMapLayout(4);
+    await page.getByRole('button', { name: /执行.*检查|开始.*检查/ }).first().click();
+    const checks = await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const { run, error } = useSwarmStore.getState(); return { passed: run.checks.every((check) => check.status === 'PASSED'), error };
+    });
+    assert.equal(checks.passed, true);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).delivery.status), 'WAITING_TAKEOFF');
+    await page.getByText('等待起飞 · 航线已接收', { exact: true }).waitFor();
+    results.push({ test: '保存恢复、航线下发及预检查闭环', ...checks });
+    await page.getByRole('button', { name: '进入飞行控制', exact: true }).click();
+    await assertMapLayout(5);
+    await page.getByRole('button', { name: /集群起飞/ }).click();
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/services/serviceRegistry.ts');
+      const { services } = await import(module.name);
+      services.swarm.tick(16);
+    });
+    await page.getByRole('button', { name: /开始任务/ }).click();
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/services/serviceRegistry.ts');
+      const { services } = await import(module.name);
+      for (let index = 0; index < 400 && services.swarm.getStatus().coverage === 0; index += 1) services.swarm.tick(.5);
+    });
+    const checkpoint = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      useSwarmStore.getState().leave();
+      return useSwarmStore.getState().run.snapshot;
+    });
+    assert.ok(checkpoint.coverage > 0 && checkpoint.coverage < 100, '已飞行且任务尚未完成');
+    await page.goto(`${base}/experiments`);
+    await page.waitForTimeout(700);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot), checkpoint, '离开页面冻结原进度');
+    await page.goto(`${base}/experiments/swarm`);
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).waitFor();
+    await page.waitForTimeout(700);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot), checkpoint, '入口等待选择不会推进飞行');
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    const returned = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      useSwarmStore.getState().leave();
+      return useSwarmStore.getState().run;
+    });
+    assert.equal(returned.step, 5);
+    assert.equal(returned.snapshot.status, 'RUNNING');
+    assert.equal(returned.snapshot.interrupted, undefined);
+    assert.ok(returned.snapshot.elapsed >= checkpoint.elapsed && returned.snapshot.elapsed < checkpoint.elapsed + 1.5);
+    assert.ok(returned.snapshot.drones.every((drone, index) => drone.battery <= checkpoint.drones[index].battery));
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      useSwarmStore.getState().resume();
+    });
+    await page.waitForTimeout(400);
+    await page.goto(`${base}/experiments`);
+    const automaticCheckpoint = await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot);
+    await page.waitForTimeout(700);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot), automaticCheckpoint, '页面卸载自动保存并停止计时');
+    await page.goto(`${base}/experiments/swarm`);
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    const beforeRefresh = await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot.elapsed);
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    const refreshed = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const state = useSwarmStore.getState();
+      state.command('pauseMission');
+      return useSwarmStore.getState().run.snapshot;
+    });
+    assert.equal(refreshed.status, 'PAUSED');
+    assert.ok(refreshed.elapsed >= beforeRefresh && refreshed.elapsed < beforeRefresh + 1.5);
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    await page.getByRole('button', { name: /继续任务/ }).waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot), refreshed);
+    results.push({ test: '离开冻结、返回续飞、刷新恢复及暂停状态保留', passed: true });
+    const previousRun = await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')));
+    page.removeAllListeners('dialog');
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.getByRole('button', { name: '重新开始实验', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1'))), previousRun);
+    page.on('dialog', (dialog) => dialog.accept());
+    const failedRestart = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const original = Storage.prototype.setItem;
+      const before = JSON.stringify(useSwarmStore.getState().run);
+      Storage.prototype.setItem = function (key, value) { if (key === 'muva-swarm-saved-drafts-v1') throw new Error('quota test'); return original.call(this, key, value); };
+      try { useSwarmStore.getState().newRun(); } finally { Storage.prototype.setItem = original; }
+      const state = useSwarmStore.getState();
+      const result = { unchanged: JSON.stringify(state.run) === before, error: state.error, initialized: state._runtimeInitialized };
+      state.clearError(); return result;
+    });
+    assert.equal(failedRestart.unchanged, true);
+    assert.equal(failedRestart.initialized, true);
+    assert.match(failedRestart.error, /未开始新实验/);
+    results.push({ test: '取消重新开始或存储失败均不丢失当前进度', passed: true });
+    await page.getByRole('button', { name: '重新开始实验', exact: true }).click();
+    assert.equal(await map.getAttribute('data-planning-stage'), 'empty');
+    assert.equal(await map.getAttribute('data-drone-count'), '0');
+    const restarted = await page.evaluate(() => ({ current: JSON.parse(localStorage.getItem('muva-swarm-draft-v1')), saved: JSON.parse(localStorage.getItem('muva-swarm-saved-drafts-v1')) }));
+    assert.notEqual(restarted.current.id, previousRun.id);
+    assert.equal(restarted.current.step, 1);
+    assert.equal(restarted.current.area, null);
+    assert.deepEqual(restarted.current.missions, []);
+    assert.deepEqual(restarted.saved.find((draft) => draft.id === previousRun.id), previousRun);
+    await page.getByRole('button', { name: '保留进度并返回', exact: true }).click();
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).waitFor();
+    await page.getByRole('button', { name: '重新开始实验', exact: true }).waitFor();
+    await page.screenshot({ path: `${output}/continue-or-restart.png`, fullPage: true });
+    await page.getByRole('button', { name: `恢复保留进度 ${previousRun.id}`, exact: true }).click();
+    await page.getByRole('button', { name: /继续任务/ }).waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-draft-v1')).snapshot), previousRun.snapshot);
+    results.push({ test: '实验内可保留返回或重新开始，新实验空白，旧飞行进度跨刷新可恢复', passed: true });
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/services/serviceRegistry.ts');
+      const { services } = await import(module.name);
+      services.swarm.returnToHome();
+      for (let index = 0; index < 1000 && !['COMPLETED', 'ABORTED'].includes(services.swarm.getStatus().status); index += 1) services.swarm.tick(.5);
+    });
+    await page.getByRole('button', { name: '保存实验记录', exact: true }).waitFor();
+    await assertMapLayout(6);
+    await page.getByRole('button', { name: '保存实验记录', exact: true }).click();
+    await page.getByRole('button', { name: '重新实验', exact: true }).click();
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('muva-swarm-records-v1')).length), 1, '新实验保留已保存的结果记录');
+    await page.getByRole('button', { name: '确认配置并进入下一步', exact: true }).click();
+    await page.getByRole('button', { name: '载入教学示例', exact: true }).click();
+    await page.getByRole('button', { name: '初始化机群', exact: true }).click();
+    await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const { swarmFrame } = await import('/src/domain/swarmGeometry.ts');
+      const store = useSwarmStore.getState();
+      const { toGeo } = swarmFrame(store.run.config.sceneOrigin);
+      store.navigate(2);
+      store.addNoFlyZone([toGeo([-500, -500]), toGeo([-490, -500]), toGeo([-490, -490]), toGeo([-500, -490])]);
+      store.updateConfig({ speed: 8 });
+    });
+    await page.waitForFunction(() => document.querySelector('[data-drone-count="0"]'));
+    assert.equal(await map.getAttribute('data-drone-count'), '0');
+    assert.equal(await page.getByRole('button', { name: '确认规划并进入下一步', exact: true }).isDisabled(), true);
+    results.push({ test: '修改参数使旧航线与机群状态失效', passed: true });
+    await page.getByRole('button', { name: '清除全部', exact: true }).click();
+    const cleared = await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const { run } = useSwarmStore.getState();
+      return !run.area && !run.config.homePosition && !run.snapshot && !run.missions.length && !run.planning.noFlyZones.length;
+    });
+    assert.ok(cleared);
+    await page.getByRole('button', { name: '载入教学示例', exact: true }).click();
+    await page.getByRole('button', { name: '初始化机群', exact: true }).click();
+    await generateRoutes(page);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.getByRole('button', { name: '回到任务区域', exact: true }).click();
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: `${output}/example-1920.png`, fullPage: true });
+    await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name);
+      const state = useSwarmStore.getState();
+      state.addNoFlyZone(state.run.area.polygon.coordinates[0].slice(0, -1));
+      state.navigate(3);
+      state.plan();
+    });
+    await page.getByRole('alert').filter({ hasText: '可覆盖区域不足' }).waitFor();
+    assert.equal(await page.evaluate(async () => {
+      const storeModule = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(storeModule.name); return useSwarmStore.getState().run.missions.length;
+    }), 0);
+    await page.getByRole('navigation', { name: '实验步骤' }).getByRole('button', { name: /区域规划/ }).click();
+    await page.getByRole('button', { name: '删除禁飞区 2', exact: true }).click();
+    await generateRoutes(page);
+    results.push({ test: '禁飞区完全阻断任务时拒绝下发，删除后可重新规划', passed: true });
+    await page.evaluate(async () => {
+      const resources = performance.getEntriesByType('resource');
+      const { useSwarmStore } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts').name);
+      const { swarmFrame } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/domain/swarmGeometry.ts').name);
+      const state = useSwarmStore.getState();
+      const { toGeo } = swarmFrame(state.run.config.sceneOrigin);
+      state.setArea([[-140, 0], [170, 0], [30, 250]].map(toGeo));
+      state.addNoFlyZone([[-20, 60], [20, 60], [20, 105], [-20, 105]].map(toGeo));
+    });
+    await generateRoutes(page, false);
+    const triangle = await page.evaluate(async () => {
+      const resources = performance.getEntriesByType('resource');
+      const { useSwarmStore } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts').name);
+      const { swarmFrame } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/domain/swarmGeometry.ts').name);
+      const { minimumCoverageRectangle } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/domain/swarmCoverage.ts').name);
+      const { run, error } = useSwarmStore.getState();
+      const { toLocal } = swarmFrame(run.config.sceneOrigin);
+      const { align } = minimumCoverageRectangle(run.area, run.config.sceneOrigin);
+      return { error, zones: run.planning.noFlyZones.length, missions: run.missions.length,
+        orthogonalScans: run.missions.every((mission) => mission.coverageSegments.every(([start, end]) => {
+          const first = align(toLocal(start)); const second = align(toLocal(end));
+          return Math.abs(first[0] - second[0]) < .001 || Math.abs(first[1] - second[1]) < .001;
+        })) };
+    });
+    assert.deepEqual(triangle, { error: null, zones: 2, missions: 3, orthogonalScans: true });
+    await page.getByRole('button', { name: '回到任务区域', exact: true }).click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${output}/triangle-no-fly-stage3.png`, fullPage: true });
+    results.push({ test: '步骤3独立生成三角形区域正交航线，内部禁飞区自动避让', ...triangle });
+    const canceled = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      let state = useSwarmStore.getState(); state.checkPlan();
+      state = useSwarmStore.getState(); const planId = state.run.delivery.planId;
+      const pending = state.uploadPlan();
+      useSwarmStore.getState().setArea(state.run.area.polygon.coordinates[0].slice(0, -1));
+      await pending;
+      const current = useSwarmStore.getState();
+      const result = { busy: current.busy, missionCount: current.run.missions.length, hasDelivery: !!current.run.delivery,
+        receiptCount: current.run.snapshot.missionReceipts.length, hasCenter: !!current.run.area.center };
+      current.plan();
+      result.newVersion = useSwarmStore.getState().run.delivery.planId !== planId;
+      return result;
+    });
+    assert.deepEqual(canceled, { busy: false, missionCount: 0, hasDelivery: false, receiptCount: 0, hasCenter: true, newVersion: true });
+    results.push({ test: '下发中编辑区域取消请求、清除旧回执，重新生成创建新计划版本', ...canceled });
+    const failedUpload = await page.evaluate(async () => {
+      const resources = performance.getEntriesByType('resource');
+      const { useSwarmStore } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts').name);
+      const { services } = await import(resources.find((entry) => new URL(entry.name).pathname === '/src/services/serviceRegistry.ts').name);
+      useSwarmStore.getState().checkPlan();
+      const original = services.swarm.uploadMission.bind(services.swarm);
+      services.swarm.uploadMission = async () => [];
+      try { await useSwarmStore.getState().uploadPlan(); }
+      finally { services.swarm.uploadMission = original; }
+      const { run, busy, error } = useSwarmStore.getState();
+      return { status: run.delivery.status, receipts: run.delivery.receipts.length, busy, error };
+    });
+    assert.equal(failedUpload.status, 'CHECKED'); assert.equal(failedUpload.receipts, 0); assert.equal(failedUpload.busy, false); assert.match(failedUpload.error, /回执/);
+    results.push({ test: '缺少回执拒绝确认并可重试，未伪造接收成功', ...failedUpload });
+    await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const pending = useSwarmStore.getState().uploadPlan();
+      useSwarmStore.getState().leave();
+      await pending;
+    });
+    await page.reload();
+    await page.getByRole('button', { name: '继续上次进度', exact: true }).click();
+    await page.locator('[data-delivery-status="CHECKED"]').waitFor();
+    await page.getByRole('button', { name: '下发航线', exact: true }).click();
+    await page.locator('[data-delivery-status="UPLOADED"]').waitFor();
+    assert.equal(await page.getByText('✓ 航线接收成功', { exact: true }).count(), 3);
+    await page.screenshot({ path: `${output}/triangle-checked-uploaded-1920.png`, fullPage: true });
+    const invalidated = await page.evaluate(async () => {
+      const module = performance.getEntriesByType('resource').find((entry) => new URL(entry.name).pathname === '/src/stores/swarmStore.ts');
+      const { useSwarmStore } = await import(module.name);
+      const before = useSwarmStore.getState().run;
+      useSwarmStore.getState().setHome(before.config.homePosition);
+      const { run } = useSwarmStore.getState();
+      return { missions: run.missions.length, receipts: run.snapshot.missionReceipts.length, delivery: !!run.delivery, confirmed: run.confirmed };
+    });
+    assert.deepEqual(invalidated, { missions: 0, receipts: 0, delivery: false, confirmed: false });
+    results.push({ test: '下发中离开/刷新可重新下发，修改规划Home使已下发结果失效', passed: true });
+    const offline = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    offline.on('pageerror', (error) => errors.push(error.message));
+    await offline.route('**/World_Imagery/MapServer/tile/**', (route) => route.abort('internetdisconnected'));
+    await offline.goto(`${base}/login`);
+    await offline.evaluate(() => {
+      sessionStorage.setItem('muva-mock-user', 'signed-in'); sessionStorage.setItem('muva-user-role', 'student'); sessionStorage.setItem('muva-auth-token', 'mock-token-student');
+    });
+    await offline.goto(`${base}/experiments/swarm`);
+    await offline.getByRole('button', { name: '开始新实验' }).click();
+    await offline.getByRole('button', { name: '确认配置并进入下一步' }).click();
+    await offline.waitForFunction(() => document.querySelector('[data-basemap-status="error"]'), null, { timeout: 20000 });
+    await offline.getByRole('button', { name: '载入教学示例', exact: true }).click();
+    await offline.getByRole('button', { name: '初始化机群', exact: true }).click();
+    await generateRoutes(offline);
+    assert.equal(await offline.getByLabel('机群区域规划交互地图', { exact: true }).getAttribute('data-drone-count'), '3');
+    await offline.screenshot({ path: `${output}/offline-1440.png`, fullPage: true });
+    await offline.unroute('**/World_Imagery/MapServer/tile/**');
+    await offline.getByRole('button', { name: '重试', exact: true }).click();
+    await offline.waitForFunction(() => document.querySelector('[data-basemap-status="ready"]'), null, { timeout: 45000 });
+    assert.equal(await offline.getByLabel('UAV-01 无人机位置', { exact: true }).count(), 1);
+    await offline.close();
+    results.push({ test: '卫星请求失败显式提示，Mock 规划可用，重试恢复图层', passed: true });
+    assert.deepEqual(errors, []);
+    results.push({ test: '清空、教学示例与浏览器运行无异常', passed: true, successfulSatelliteTiles: tiles.filter((tile) => tile.status === 200).length });
+    console.log(JSON.stringify(results, null, 2));
+    writeFileSync(`${output}/results.json`, JSON.stringify({ results, errors }, null, 2));
+  } finally {
+    await browser.close();
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
