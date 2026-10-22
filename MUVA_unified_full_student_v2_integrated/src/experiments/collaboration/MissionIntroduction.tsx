@@ -1,0 +1,10 @@
+import { Compass, MapPinned, Radar, Users } from 'lucide-react';
+
+import type { Mission } from '../../types/collaboration';
+import { CollaborationMap } from './components/CollaborationMap';
+import { TaskCard } from './components/TaskCard';
+import styles from './Collaboration.module.css';
+
+export function MissionIntroduction({ mission, onTaskSelect }: { mission: Mission; onTaskSelect: (id: string) => void }) {
+  return <div className={styles.stepPage}><div className={styles.introGrid}><section className={styles.panel}><div className={styles.panelTitle}><span className={styles.titleIcon}><Compass size={17} /></span><div><strong>任务介绍</strong><small>Mission briefing</small></div></div><div className={styles.introCopy}><span className={styles.kicker}>EXPERIMENT 03 · COLLABORATION</span><h2>多无人机任务协同实验</h2><p>使用无人机群完成多个协同任务，理解任务分组、角色分工和协同执行如何共同完成复杂飞行任务。</p></div><div className={styles.statGrid}><div><Radar size={18} /><b>5</b><small>协同任务</small></div><div><Users size={18} /><b>15</b><small>参与无人机</small></div><div><MapPinned size={18} /><b>1</b><small>共享任务空域</small></div></div><div className={styles.learningTip}><strong>本阶段学习目标</strong><span>先认识任务结构，再配置无人机角色；不要急于规划航线，重点观察“谁和谁协同”。</span></div></section><section className={`${styles.panel} ${styles.mapPanelLarge}`}><div className={styles.panelTitle}><span className={styles.titleIcon}><MapPinned size={17} /></span><div><strong>共享任务空域</strong><small>5 个任务目标 · 15 架无人机共用一张地图</small></div><span className={styles.panelStatus}>MOCK MAP</span></div><CollaborationMap mission={mission} selectedGroupId="" selectedDrone={null} mapPoints={[]} drawing={false} onMapClick={() => undefined} onDroneClick={() => undefined} /></section><section className={`${styles.panel} ${styles.taskListPanel}`}><div className={styles.panelTitle}><span className={styles.titleIcon}><Radar size={17} /></span><div><strong>协同任务列表</strong><small>点击任务进入编组配置</small></div></div><div className={styles.taskList}>{mission.tasks.map((task) => <TaskCard task={task} key={task.id} onClick={() => onTaskSelect(mission.groups.find((group) => group.taskId === task.id)?.id ?? '')} />)}</div></section></div></div>;
+}

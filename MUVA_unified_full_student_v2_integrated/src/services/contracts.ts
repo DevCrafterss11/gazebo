@@ -13,6 +13,7 @@ import type { FlightSafetyContext } from '../domain/flightSafety';
 import type { ExperimentProgressEvent } from '../types/experiment';
 import type { ExperimentOneAssessment } from '../types/experiment1Assessment';
 import type { SecurityConfig, SecurityEvidence, SecurityJudgment, SecurityReport, SecurityRun, SecurityTelemetry } from '../types/securityExperiment';
+import type { CustomSecurityConfig, CustomSecurityReport, CustomSecurityRun, RuleEvidence } from '../types/customSecurity';
 
 export interface DroneService {
   getDroneModels(): Promise<DroneModel[]>;
@@ -141,4 +142,14 @@ export interface SecurityExperimentService {
   finish(runId: string, reflection: string): Promise<SecurityReport>;
   abort(runId: string): Promise<SecurityReport>;
   subscribe(runId: string, onSample: SecurityTelemetryHandler, onEvidence: (items: SecurityEvidence[]) => void): () => void;
+}
+
+export type CustomSecurityRunHandler = (run: CustomSecurityRun) => void;
+export interface CustomSecurityService {
+  createRun(config: CustomSecurityConfig, onUpdate: CustomSecurityRunHandler): Promise<CustomSecurityRun>;
+  finish(runId: string, reflection: string, selectedEvidence: string[]): Promise<CustomSecurityReport>;
+  abort(runId: string, reflection: string): Promise<CustomSecurityReport>;
+  listReports(): Promise<CustomSecurityReport[]>;
+  getRun(runId: string): Promise<CustomSecurityRun | null>;
+  validateEvidence(runId: string, evidenceIds: string[]): Promise<RuleEvidence[]>;
 }

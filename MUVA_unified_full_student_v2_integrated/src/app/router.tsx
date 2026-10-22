@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 import { ExperimentLayout } from '../layouts/ExperimentLayout/ExperimentLayout';
 import { MainLayout } from '../layouts/MainLayout/MainLayout';
@@ -14,15 +14,13 @@ import { AdminResourcesPage } from '../pages/admin/AdminResourcesPage';
 import { AdminSettingsPage } from '../pages/admin/AdminSettingsPage';
 import { AdminUsersPage } from '../pages/admin/AdminUsersPage';
 import { BasicFlightPage } from '../pages/experiments/basic-flight/BasicFlightPage';
-import { ExperimentComingSoonPage } from '../pages/experiments/ExperimentComingSoonPage';
+import { CustomSecurityExperimentPage } from '../pages/experiments/custom-security/CustomSecurityExperimentPage';
 import { SecurityExperimentPage } from '../pages/experiments/security/SecurityExperimentPage';
 import { SwarmExperimentPage } from '../pages/experiments/swarm/SwarmExperimentPage';
 import { SwarmRecordPage } from '../pages/experiments/swarm/SwarmRecordPage';
 import { ExperimentsPage } from '../pages/experiments/ExperimentsPage';
-import { AssessmentPage } from '../pages/experiments/assessment/AssessmentPage';
 import { AssessmentRecordPage } from '../pages/experiments/assessment/AssessmentRecordPage';
-import { RealAssessmentPage } from '../pages/experiments/assessment/RealAssessmentPage';
-import { assessmentSource } from '../services/assessment/droneAdapter';
+import { CollaborationExperimentPage } from '../experiments/collaboration/CollaborationExperimentPage';
 import { AnalyticsPage } from '../pages/platform/AnalyticsPage';
 import { DashboardPage } from '../pages/platform/DashboardPage';
 import { FlightPage } from '../pages/platform/FlightPage';
@@ -71,10 +69,11 @@ export const router = createBrowserRouter([
           },
           { path: 'experiments/swarm', element: studentOnly(<SwarmExperimentPage />) },
           { path: 'records/swarm/:id', element: studentOnly(<SwarmRecordPage />) },
-          { path: 'experiments/mission', element: studentOnly(assessmentSource === 'real' ? <RealAssessmentPage /> : <AssessmentPage />) },
+          { path: 'experiments/collaboration', element: studentOnly(<CollaborationExperimentPage />) },
+          { path: 'experiments/mission', element: studentOnly(<Navigate to="/experiments/collaboration" replace />) },
           { path: 'records/assessment/:id', element: studentOnly(<AssessmentRecordPage />) },
           { path: 'experiments/security', element: studentOnly(<SecurityExperimentPage />) },
-          { path: 'experiments/custom-security', element: studentOnly(<ExperimentComingSoonPage />) },
+          { path: 'experiments/custom-security', element: studentOnly(<CustomSecurityExperimentPage />) },
           { path: 'flight', element: teacherOrStudent(<FlightPage />) },
           { path: 'records', element: studentOnly(<RecordsPage />) },
           { path: 'records/:id', element: studentOnly(<RecordDetailPage />) },

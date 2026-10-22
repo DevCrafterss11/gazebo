@@ -7,6 +7,7 @@ import type {
   SceneService,
   TelemetryService,
   SecurityExperimentService,
+  CustomSecurityService,
 } from './contracts';
 import {
   ApiDroneService,
@@ -28,6 +29,7 @@ import { MockSwarmRuntime } from './mock/MockSwarmRuntime';
 import { ApiSwarmService } from './api/ApiSwarmService';
 import { MockSecurityExperimentService } from './mock/MockSecurityExperimentService';
 import { ApiSecurityExperimentService } from './api/ApiSecurityExperimentService';
+import { MockCustomSecurityService } from './mock/MockCustomSecurityService';
 import type { SwarmService } from './swarmContract';
 import { assessmentRuntime, type AssessmentRuntime } from './mock/MockAssessmentRuntime';
 import { MockDroneAdapter, RealMavlinkAdapter, assessmentSource, type AssessmentDroneAdapter } from './assessment/droneAdapter';
@@ -56,6 +58,7 @@ export interface ServiceRegistry {
   scenes: SceneService;
   telemetry: TelemetryService;
   security: SecurityExperimentService;
+  customSecurity: CustomSecurityService;
   swarm: SwarmService;
   assessment: AssessmentRuntime;
   assessmentAdapter: AssessmentDroneAdapter;
@@ -73,6 +76,7 @@ export const services: ServiceRegistry = dataSource === 'api'
       scenes: new ApiSceneService(),
       telemetry: new ApiTelemetryService(),
       security: new ApiSecurityExperimentService(),
+      customSecurity: new MockCustomSecurityService(),
       swarm: swarmService,
       assessment: assessmentRuntime,
       assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),
@@ -88,6 +92,7 @@ export const services: ServiceRegistry = dataSource === 'api'
       scenes: new MockSceneService(),
       telemetry: new MockTelemetryService(),
       security: new MockSecurityExperimentService(),
+      customSecurity: new MockCustomSecurityService(),
       swarm: swarmService,
       assessment: assessmentRuntime,
       assessmentAdapter: assessmentSource === 'real' ? new RealMavlinkAdapter() : new MockDroneAdapter(assessmentRuntime),

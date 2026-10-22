@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Check, CircleHelp, Download, Radio, Shield, ShieldAlert, Square, Wifi, WifiOff } from 'lucide-react';
 import { useSecurityExperimentStore } from '../../../stores/securityExperimentStore';
 import type { SecurityCase, SecurityConfig, SecurityJudgment } from '../../../types/securityExperiment';
@@ -39,9 +39,16 @@ export function SecurityExperimentPage() {
   const [difficulty, setDifficulty] = useState<SecurityConfig['difficulty']>('medium');
   const [judgment, setJudgment] = useState<SecurityJudgment | ''>('');
   const [selectedEvidence, setSelectedEvidence] = useState<string[]>([]);
+  const reportRef = useRef<HTMLElement>(null);
+
+  function showReport(): void {
+    reportRef.current?.focus({ preventScroll: true });
+    reportRef.current?.scrollIntoView({ block: 'start' });
+  }
 
   useEffect(() => { void initialize(); }, [initialize]);
   useEffect(() => { setJudgment(run?.judgment ?? ''); setSelectedEvidence(run?.evidenceIds ?? []); }, [run?.runId]);
+  useEffect(() => { if (report) showReport(); }, [report]);
   const phaseIndex = useMemo(() => {
     if (!run) return -1;
     return ({ preparation: 1, baseline: 2, anomaly: 3, recovery: 5, completed: 6, aborted: 6, failed: 6 } as const)[run.phase];
@@ -52,7 +59,7 @@ export function SecurityExperimentPage() {
   const selectable = !!run && (run.phase === 'anomaly' || run.phase === 'baseline');
 
   return <main className={styles.page}>
-    <header className={styles.header}><div><div className={styles.eyebrow}>EXPERIMENT 04 · ISOLATED TELEMETRY LAB</div><h1><ShieldAlert size={26} />安全攻防对抗</h1><p>观察专属实验遥测通道中的数据可信度与链路连续性；不触碰飞控控制指令。</p></div><div className={styles.badges}><span className={styles.badge}><Radio size={15} />{mode === 'training' ? '训练模式' : '考核模式'}</span><span className={`${styles.badge} ${stale ? styles.bad : styles.good}`}>{stale ? <WifiOff size={15} /> : <Wifi size={15} />}{stale ? '数据不可用 / 过期' : '遥测新鲜'}</span><span className={styles.badge}>阶段：{phaseText}</span></div></header>
+    <header className={styles.header}><div><div className={styles.eyebrow}>EXPERIMENT 04 · ISOLATED TELEMETRY LAB</div><h1><ShieldAlert size={26} />安全攻防对抗</h1><p>观察专属实验遥测通道中的数据可信度与链路连续性；不触碰飞控控制指令。</p></div><div className={styles.badges}><span className={styles.badge}><Radio size={15} />{mode === 'training' ? '训练模式' : '考核模式'}</span><span className={`${styles.badge} ${stale ? styles.bad : styles.good}`}>{stale ? <WifiOff size={15} /> : <Wifi size={15} />}{stale ? '数据不可用 / 过期' : '遥测新鲜'}</span><span className={styles.badge}>阶段：{phaseText}</span>{report && <button className={styles.primary} onClick={showReport}>查看成绩 · {report.score?.total ?? 0} 分</button>}</div></header>
     {error && <div role="alert" className={styles.error}><AlertTriangle size={17} />{error}</div>}
 
     {!run && !report && <section className={styles.setup}>
@@ -83,7 +90,7 @@ export function SecurityExperimentPage() {
       </div>
     </>}
 
-    {(report || run?.phase === 'completed' || run?.phase === 'aborted') && <section className={styles.report}><h2>实验报告 · {report?.scoreSource === 'gateway' ? 'API 服务端成绩' : 'Mock 模拟成绩'}</h2>{report && <><div className={styles.score}>{report.score?.total ?? 0}<small>/100</small></div><p>运行 {report.runId} · 恢复耗时 {report.recoveryMs === null ? '未知' : `${report.recoveryMs} ms`}</p><div className={styles.scoreGrid}>{Object.entries(report.score?.sections ?? {}).map(([key, value]) => <div key={key}>{key}<b>{value}</b></div>)}</div><ul>{report.score?.deductions.map((item) => <li key={item}>{item}</li>)}</ul><button onClick={() => downloadReport(report, report.runId)}><Download size={15} />导出 JSON 报告</button><p className={styles.note}>本实验不评价飞行完成率、真实飞控防御或真实网络攻击阻断效果。</p></>}</section>}
+    {(report || run?.phase === 'completed' || run?.phase === 'aborted') && <section ref={reportRef} tabIndex={-1} aria-label="实验成绩报告" className={styles.report}><h2>实验报告 · {report?.scoreSource === 'gateway' ? 'API 服务端成绩' : 'Mock 模拟成绩'}</h2>{report && <><div className={styles.score}>{report.score?.total ?? 0}<small>/100</small></div><p>运行 {report.runId} · 恢复耗时 {report.recoveryMs === null ? '未知' : `${report.recoveryMs} ms`}</p><div className={styles.scoreGrid}>{Object.entries(report.score?.sections ?? {}).map(([key, value]) => <div key={key}>{key}<b>{value}</b></div>)}</div><ul>{report.score?.deductions.map((item) => <li key={item}>{item}</li>)}</ul><button onClick={() => downloadReport(report, report.runId)}><Download size={15} />导出 JSON 报告</button><p className={styles.note}>本实验不评价飞行完成率、真实飞控防御或真实网络攻击阻断效果。</p></>}</section>}
     {run && ['completed', 'aborted', 'failed'].includes(run.phase) && !report && <section className={styles.report}><h2>复盘与结算</h2><label>复盘分析（至少 20 字可得满额复盘分）<textarea value={reflection} onChange={(event) => setReflection(event.target.value)} rows={3} /></label><button className={styles.primary} disabled={busy} onClick={() => void finish()}>保存复盘并生成报告</button></section>}
     {run && !['completed', 'aborted', 'failed'].includes(run.phase) && <section className={styles.reflection}><h2>复盘记录</h2><textarea value={reflection} onChange={(event) => setReflection(event.target.value)} rows={2} placeholder="记录判断依据、处置过程和仍不确定的指标……" /><button className={styles.danger} disabled={busy} onClick={() => void abort()}>中止并保存</button></section>}
     {report && <button className={styles.restart} onClick={() => { useSecurityExperimentStore.getState().clear(); setJudgment(''); setSelectedEvidence([]); }}>开始下一次运行</button>}

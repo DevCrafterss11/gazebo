@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MUVA · 实验三视觉提案（静态概念稿）</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { font-family: "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif; color: #e9f5fc; background: #041626; }
+    body { margin: 0; font-size: 13px; }
+    button { font: inherit; cursor: default; }
+    .top { height: 54px; display: flex; align-items: center; gap: 12px; padding: 0 22px; border-bottom: 1px solid #184767; background: #061e33; }
+    .logo { font-size: 24px; color: #45d7ff; line-height: 1; }
+    .top strong { font-size: 20px; letter-spacing: .05em; }
+    .top small { margin-left: 14px; padding-left: 18px; border-left: 1px solid #226589; color: #80a8be; letter-spacing: .12em; }
+    .top .spacer { flex: 1; }
+    .top .tag { padding: 7px 12px; border: 1px solid #36627b; border-radius: 6px; color: #9dc4d5; }
+    .top .avatar { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #205a83; }
+    .shell { display: grid; grid-template-columns: 202px minmax(0,1fr); grid-template-rows: minmax(0,1fr); height: calc(100vh - 54px); }
+    aside.nav { padding: 18px 10px; border-right: 1px solid #16435e; background: #061d30; }
+    .nav-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 22px; border-bottom: 1px solid #20445d; font-weight: 700; }
+    .nav-head span { color: #45d7ff; font-size: 20px; }
+    .nav-item { padding: 12px 13px; border-radius: 7px; color: #9dbacb; }
+    .nav-item.active { border-left: 3px solid #39d5fe; color: #fff; background: #104869; }
+    .nav-section { padding: 20px 13px 10px; color: #668fa7; font-size: 11px; letter-spacing: .1em; }
+    .nav-sub { margin: 5px 4px; padding: 10px 15px; border-radius: 6px; color: #9cb8c8; font-size: 12px; }
+    .nav-sub.active { color: #fff; background: #12618d; }
+    .nav-foot { margin-top: 34px; padding: 14px 11px; border-top: 1px solid #22506c; color: #8cb9c6; line-height: 1.8; font-size: 11px; }
+    .nav-foot b { color: #61e6c3; }
+    .work { min-width: 0; min-height: 0; padding: 13px 16px 12px; display: grid; grid-template-rows: auto 46px minmax(0,1fr) 51px; gap: 10px; background: radial-gradient(ellipse at 66% 22%,#10334b 0%,#061d32 56%,#061a2d 100%); }
+    .work-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; min-height: 87px; }
+    .eyebrow { font-size: 11px; color: #69d7f8; letter-spacing: .12em; }
+    h1 { margin: 4px 0 4px; font-size: 21px; letter-spacing: .02em; }
+    .work-head p { margin: 0; color: #9fb9c9; font-size: 12px; }
+    .head-meta { text-align: right; color: #a7c6d4; line-height: 1.8; }
+    .head-meta strong { color: #68d9b7; font-size: 12px; }
+    .pill { display: inline-block; padding: 3px 9px; border-radius: 99px; color: #67e4bc; background: #114b4b; font-size: 11px; }
+    .pill.warn { color: #ffcf81; background: #534023; }
+    .pill.blue { color: #7bdafc; background: #16466b; }
+    .stepper { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); align-items: center; gap: 5px; padding: 5px; border: 1px solid #194867; border-radius: 9px; background: #092940; }
+    .step { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; height: 34px; padding: 0 4px; border-radius: 6px; color: #7699ad; font-size: 11px; white-space: nowrap; }
+    .step b { width: 20px; height: 20px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
+    .step.done { color: #73d6c3; } .step.active { color: white; background: #1479a9; font-weight: 700; }
+    body[data-screen="1"] .step:nth-child(1),body[data-screen="2"] .step:nth-child(2),body[data-screen="3"] .step:nth-child(3),body[data-screen="4"] .step:nth-child(4),body[data-screen="5"] .step:nth-child(5),body[data-screen="6"] .step:nth-child(6) { color: #fff; background: #1479a9; font-weight: 700; }
+    body[data-screen="2"] .step:nth-child(-n+1),body[data-screen="3"] .step:nth-child(-n+2),body[data-screen="4"] .step:nth-child(-n+3),body[data-screen="5"] .step:nth-child(-n+4),body[data-screen="6"] .step:nth-child(-n+5) { color: #73d6c3; }
+    .stage { min-height: 0; display: none; gap: 11px; }
+    body[data-screen="1"] .s1 { display: grid; grid-template-columns: minmax(0,1fr) 310px; }
+    body[data-screen="2"] .s2 { display: grid; grid-template-columns: minmax(0,1fr) 330px; }
+    body[data-screen="3"] .s3 { display: grid; grid-template-columns: 240px minmax(0,1fr) 255px; }
+    body[data-screen="4"] .s4 { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(350px,.85fr); }
+    body[data-screen="5"] .s5 { display: grid; grid-template-columns: 235px minmax(0,1fr) 265px; }
+    body[data-screen="6"] .s6 { display: grid; grid-template-columns: minmax(0,1fr) 320px; }
+    .card { min-width: 0; min-height: 0; overflow: auto; border: 1px solid #235574; border-radius: 10px; background: #0b2d45; box-shadow: 0 12px 28px #02152135; }
+    .card-pad { padding: 17px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid #234f67; }
+    .card-head strong { font-size: 14px; } .card-head small { color: #8fb0bf; }
+    h2 { margin: 0 0 6px; font-size: 18px; } h3 { margin: 0 0 8px; font-size: 14px; }
+    p { line-height: 1.6; } .muted { color: #9ab7c7; } .tiny { color: #85a7b8; font-size: 11px; }
+    .footer { display: flex; justify-content: space-between; align-items: center; padding: 7px 13px; border: 1px solid #215475; border-radius: 8px; color: #a9c6d3; background: #092b45; font-size: 12px; }
+    .footer b { color: #78dcbf; } .buttons { display: flex; gap: 8px; }
+    .btn { padding: 8px 13px; border: 1px solid #3a7490; border-radius: 6px; color: #daeff8; background: #113a53; }
+    .btn.primary { border-color: #32bce8; color: #fff; background: #117cab; font-weight: 700; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.danger { border-color: #b06166; color: #ffc8c7; background: #562e40; }
+    .task-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 13px; }
+    .task { min-height: 95px; padding: 12px; border: 1px solid #275b77; border-radius: 8px; background: #10354d; }
+    .task.featured { border-color: #50d2fc; background: #125375; box-shadow: inset 3px 0 #58e5f6; }
+    .task .row { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+    .badge-icon { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 7px; background: #17618a; color: #a5edff; }
+    .task strong { font-size: 13px; }.task p { margin: 0; color: #a0c0ce; font-size: 11px; }
+    .task small { display: block; margin-top: 7px; color: #7ee0c3; font-size: 11px; }
+    .divider { height: 1px; margin: 14px 0; background: #24556e; }
+    .mode { display: flex; gap: 8px; margin-top: 10px; }
+    .mode span { padding: 8px 10px; border: 1px solid #285b76; border-radius: 6px; background: #103951; }
+    .mode span.selected { border-color: #46d2f5; color: #b7efff; background: #145474; }
+    .kv { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid #234b63; }
+    .kv:last-child { border-bottom: 0; } .kv b { font-weight: 600; color: #dcf4fc; }
+    .notice { padding: 11px 12px; border: 1px solid #31849d; border-radius: 7px; color: #a9dbe6; background: #124359; font-size: 12px; line-height: 1.6; }
+    .notice.warning { border-color: #94682d; color: #f2cea0; background: #503b28; }
+    .notice.success { border-color: #2a8a79; color: #96eccb; background: #164f4e; }
+    .table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+    .table th { padding: 11px 9px; color: #8fb4c4; font-weight: 500; background: #102e43; white-space: nowrap; }
+    .table td { padding: 13px 9px; border-bottom: 1px solid #23495e; white-space: nowrap; }
+    .table tr.selected { background: #144967; }.table td:last-child { color: #7ee3ff; }
+    .field { display: flex; flex-direction: column; gap: 7px; margin: 11px 0; color: #adc6d1; font-size: 11px; }
+    .value { min-height: 34px; padding: 8px 10px; border: 1px solid #316b85; border-radius: 5px; background: #0c3852; color: white; font-size: 12px; }
+    .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .member { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid #22526b; }
+    .member strong { margin-left: auto; color: #85e4c2; font-size: 11px; }
+    .num { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #c8eff8; background: #21658a; font-size: 11px; }
+    .map { position: relative; height: 100%; min-height: 260px; overflow: hidden; background-color: #0b324a; background-image: linear-gradient(#35749632 1px,transparent 1px),linear-gradient(90deg,#35749632 1px,transparent 1px); background-size: 32px 32px; }
+    .map::before { position: absolute; inset: 11% 12%; border: 1px dashed #63a4bd72; border-radius: 18px; content: ""; }
+    .map-title { position: absolute; top: 12px; left: 14px; z-index: 2; padding: 6px 9px; border: 1px solid #2c6885; border-radius: 5px; background: #082c45e0; color: #b8e5f1; font-size: 11px; }
+    .map-help { position: absolute; right: 12px; bottom: 10px; z-index: 2; padding: 6px 9px; border-radius: 5px; background: #072639db; color: #95bbca; font-size: 11px; }
+    .zone { position: absolute; border: 1px solid #43d1f0; border-radius: 9px; background: #35b7d11c; }
+    .zone.z1 { inset: 24% auto 18% 15%; width: 33%; }.zone.z2 { inset: 24% 15% 18% auto; width: 33%; }
+    .zone label { position: absolute; top: 10px; left: 10px; color: #9cefff; font-size: 11px; }
+    .drone { position: absolute; z-index: 2; display: flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid #5bdfff; border-radius: 6px; background: #06436b; box-shadow: 0 0 0 3px #0d2b47; color: #fff; font-size: 11px; }
+    .drone.d1 { top: 37%; left: 22%; }.drone.d2 { top: 62%; right: 26%; }
+    .home { position: absolute; bottom: 8%; left: 49%; padding: 6px 8px; border: 1px solid #8bdfff; border-radius: 50%; color: #fff; background: #16547b; font-size: 11px; }
+    .route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .route path { fill: none; stroke: #4cd9ee; stroke-width: 1.8; stroke-dasharray: 7 5; opacity: .8; }
+    .route path.alt { stroke: #b3dc7d; }
+    .check { display: flex; gap: 10px; padding: 11px 0; border-bottom: 1px solid #285469; font-size: 12px; }
+    .check b { margin-left: auto; color: #9be8ce; font-size: 11px; white-space: nowrap; }
+    .check.warning b { color: #ffd493; }.check.blocked b { color: #ffabae; }
+    .section-caption { margin: 15px 0 6px; color: #8bb9cb; font-size: 11px; letter-spacing: .09em; }
+    .progress { height: 7px; overflow: hidden; border-radius: 8px; background: #224d64; }.progress i { display: block; height: 100%; background: #56ddc0; }
+    .metric-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+    .metric { padding: 11px 8px; border: 1px solid #29617a; border-radius: 7px; background: #103b53; }
+    .metric small { display: block; color: #98b8c6; font-size: 10px; }.metric strong { display: block; margin-top: 4px; color: #eafaff; font-size: 20px; }
+    .feed { margin: 10px 0 0; padding: 0; list-style: none; }.feed li { padding: 8px 0; border-bottom: 1px solid #22516a; color: #b6d3de; font-size: 11px; }
+    .feed time { margin-right: 9px; color: #65b9d0; }
+    .incident { display: none; position: absolute; inset: auto 16px 109px 16px; z-index: 5; padding: 13px; border: 1px solid #d88763; border-radius: 8px; background: #432f3c; box-shadow: 0 12px 30px #0007; }
+    .incident strong { color: #ffe6cf; }.incident p { margin: 6px 0; color: #ffd1ba; font-size: 11px; }
+    body[data-variant="incident"] .incident { display: block; }
+    .report-hero { display: flex; justify-content: space-between; padding: 15px; border: 1px solid #2e7085; border-radius: 8px; background: #125273; }
+    .report-hero strong { display: block; margin-top: 5px; font-size: 24px; }
+    .report-hero span { font-size: 11px; color: #bce4ee; }
+    .bar { height: 8px; margin-top: 7px; border-radius: 9px; background: #1d546c; }.bar i { display: block; width: 64%; height: 100%; border-radius: inherit; background: #4ad9be; }
+    .stage.s5 .map-wrap { display: grid; grid-template-rows: 45px minmax(0,1fr) 100px; overflow: hidden; }
+    .stage.s5 .map-wrap .card-head { padding: 10px 12px; }
+    .timeline { padding: 8px 12px; border-top: 1px solid #25607d; background: #0b2c44; }
+    .timeline div { padding: 5px 0; font-size: 11px; color: #aacddc; }
+    .timeline b { color: #7be1bf; margin-right: 9px; }
+    .stage.s3 .side,.stage.s5 .side { padding: 15px; }
+    body[data-variant="resources"] .resource-overlay { display: block; }
+    .resource-overlay { display: none; position: absolute; inset: 0; z-index: 10; background: #020e19a0; }
+    .drawer { position: absolute; top: 54px; right: 0; bottom: 0; width: 380px; padding: 20px; border-left: 1px solid #42b9d5; background: #0a2e46; box-shadow: -20px 0 50px #0007; }
+    .resource-item { display: flex; justify-content: space-between; align-items: center; margin: 9px 0; padding: 12px; border: 1px solid #32718c; border-radius: 8px; background: #10425e; }
+    .resource-item b { font-size: 12px; }.resource-item small { display: block; margin-top: 5px; color: #9dc0cb; font-size: 11px; }
+    .s1 > .card:last-child .divider { margin: 9px 0; }
+    .s1 > .card:last-child .kv { padding: 6px 0; }
+    .s2 > .card:last-child { padding: 12px 16px; }
+    .s2 > .card:last-child .divider { margin: 9px 0; }
+    .s2 > .card:last-child .field { gap: 5px; margin: 7px 0; }
+    .s2 > .card:last-child .value { min-height: 30px; padding: 5px 9px; }
+    .s6 > .card:last-child .kv { padding: 6px 0; }
+    .s6 > .card:last-child .divider { margin: 9px 0; }
+    .s6 > .card:first-child .check { padding: 10px 0; }
+    .s5 > .card:first-child .member { padding: 7px 0; }
+    .s5 > .card:first-child .kv { padding: 7px 0; }
+  </style>
+</head>
+<body data-screen="1">
+<header class="top"><span class="logo">◈</span><strong>MUVA</strong><small>无人机教学与安全实验平台</small><span class="spacer"></span><span class="tag">● 前端教学模拟</span><span class="avatar">张</span><span>张三　⌄</span></header>
+<div class="shell">
+  <aside class="nav"><div class="nav-head"><span>◈</span> 实验中心</div><div class="nav-item">⌂　平台总览</div><div class="nav-item">▧　我的课程</div><div class="nav-section">实验教学</div><div class="nav-sub">实验一　基础飞行</div><div class="nav-sub">实验二　集群飞行</div><div class="nav-sub active">实验三　任务协同</div><div class="nav-sub">实验四　安全对抗</div><div class="nav-item">▤　实验记录</div><div class="nav-item">▥　实验报告</div><div class="nav-foot"><b>● 实验三 · 教学 Mock</b><br>当前任务：区域搜索<br>飞行指令仅为模拟演示</div></aside>
+  <div class="work">
+    <header class="work-head"><div><div class="eyebrow">EXPERIMENT 03　/　MISSION COLLABORATION</div><h1>多无人机任务协同 <span style="color:#5bb9d7">/</span> <span id="stage-title">选择任务与目标</span></h1><p>当前关卡：区域搜索 · 两架无人机分区协同　<span class="pill blue">学习模式</span></p></div><div class="head-meta"><strong>● 草稿已保存</strong><br>课程进度　0 / 5 关</div></header>
+    <nav class="stepper"><span class="step"><b>1</b>选择任务</span><span class="step"><b>2</b>无人机与分工</span><span class="step"><b>3</b>任务规划</span><span class="step"><b>4</b>方案检查</span><span class="step"><b>5</b>执行与异常</span><span class="step"><b>6</b>复盘报告</span></nav>
+
+    <section class="stage s1">
+      <div class="card card-pad"><span class="eyebrow">一次聚焦一个任务 · 完成后再选下一关</span><h2 style="margin-top:8px">选择协同任务</h2><p class="muted" style="margin:0">五种协作能力分关学习；综合执行在完成基础关卡后开启，不预先占用十五架无人机。</p>
+        <div class="task-grid">
+          <div class="task featured"><div class="row"><span class="badge-icon">⌕</span><strong>区域搜索</strong><span class="pill" style="margin-left:auto">当前选择</span></div><p>把搜索区域划分成独立子区，比较并行搜索与单机基线。</p><small>建议 2–4 架　 ·　学习分区和覆盖</small></div>
+          <div class="task"><div class="row"><span class="badge-icon">◎</span><strong>目标跟踪</strong></div><p>主跟踪机与辅助观察机协作，发生丢失时执行接替。</p><small>建议 2–3 架　 ·　学习主辅关系</small></div>
+          <div class="task"><div class="row"><span class="badge-icon">▥</span><strong>立体巡检</strong></div><p>按顶部、侧面和检查点分工，不依赖统一进度条。</p><small>建议 2–3 架　 ·　学习检查点分配</small></div>
+          <div class="task"><div class="row"><span class="badge-icon">⌁</span><strong>通信中继</strong></div><p>观察地面站、节点和远端作业机之间的链路。</p><small>建议 2–3 架　 ·　学习链路拓扑</small></div>
+          <div class="task"><div class="row"><span class="badge-icon">▣</span><strong>多点协同运输</strong></div><p>按货物和取送点分配任务，检查交接是否完成。</p><small>建议 2–4 架　 ·　学习任务交接</small></div>
+          <div class="task" style="border-style:dashed;display:grid;place-items:center;text-align:center;color:#9fc5d1"><div><strong>◇ 综合任务（进阶）</strong><p>多任务并行时再管理任务组和资源冲突</p></div></div>
+        </div></div>
+      <div class="card card-pad"><span class="eyebrow">任务说明</span><h2 style="margin-top:12px">区域搜索协同</h2><p class="muted">在相同任务区域中，为无人机分配互不重复的搜索分区。运行结束后可与单机基线对照。</p><div class="divider"></div><div class="kv"><span>学习目标</span><b>分区 · 协作 · 覆盖</b></div><div class="kv"><span>建议规模</span><b>2–4 架</b></div><div class="kv"><span>评估指标</span><b>有效覆盖 / 重复扫描</b></div><div class="kv"><span>完成条件</span><b>各分区扫描完成</b></div><div class="divider"></div><b style="font-size:12px">运行方式</b><div class="mode"><span class="selected">多机协作</span><span>单机对照</span></div><p class="notice" style="margin-top:10px">第一步只选任务和学习方式；无需在入口阅读五个任务的完整配置表。</p></div>
+    </section>
+
+    <section class="stage s2">
+      <div class="card"><div class="card-head"><strong>本次任务成员 <span class="pill blue">2 架 · 搜索组</span></strong><button class="btn primary">＋ 添加无人机</button></div><div style="padding:16px"><div class="notice success" style="margin-bottom:13px">✓ 两个搜索分区各有一名执行者；单机参数与组级协作规则分开配置。</div><table class="table"><thead><tr><th>无人机</th><th>角色</th><th>负责区域</th><th>高度</th><th>计划速度</th><th>配置状态</th><th>操作</th></tr></thead><tbody><tr class="selected"><td><b>◈ UAV-01</b></td><td>搜索执行者</td><td>西分区</td><td>24 m</td><td>8 m/s</td><td><span class="pill">已配置</span></td><td>正在查看</td></tr><tr><td><b>◈ UAV-02</b></td><td>搜索执行者</td><td>东分区</td><td>28 m</td><td>8 m/s</td><td><span class="pill">已配置</span></td><td>查看 / 移除</td></tr></tbody></table><div class="section-caption">资源分配逻辑</div><div class="cols2"><div class="notice">选中 UAV-01 仅打开详情，不会改变其编组。</div><div class="notice">已在其他任务使用的飞机显示归属，调拨需确认。</div></div><div class="section-caption">与旧页面对比</div><p class="muted" style="margin:0">资源池只在点击「添加无人机」时打开；不再将十五张同质卡片长期铺在主工作区。</p></div></div>
+      <div class="card card-pad"><span class="eyebrow">单机配置 / SELECTED DRONE</span><h2 style="margin-top:8px">UAV-01</h2><div class="tiny">Iris 四旋翼 · 电量 100% · 空闲可用</div><div class="divider"></div><label class="field">本次角色<span class="value">搜索执行者　⌄</span></label><label class="field">负责子任务<span class="value">区域 A / 西分区　⌄</span></label><div class="cols2"><label class="field">作业高度<span class="value">24　m</span></label><label class="field">计划速度<span class="value">8　m/s</span></label></div><label class="field">起降位置<span class="value">Home / H-01　⌄</span></label><div class="notice" style="margin-top:8px">参数是本次任务的计划值。飞机的实时速度、电量和位置只在执行页展示。</div><div class="buttons" style="justify-content:flex-end;margin-top:8px"><button class="btn">取消</button><button class="btn primary">应用单机配置</button></div></div>
+    </section>
+
+    <section class="stage s3">
+      <div class="card side"><span class="eyebrow">当前任务</span><h3 style="margin-top:13px">区域搜索 · 并行分区</h3><p class="tiny">以下是任务组规则，不重复填写每架飞机的速度和高度。</p><div class="divider"></div><div class="kv"><span>执行机制</span><b>分区并行</b></div><div class="kv"><span>启动顺序</span><b>依次入场</b></div><div class="kv"><span>汇总规则</span><b>双区完成</b></div><div class="section-caption">区域与执行者</div><div class="member"><span class="num">A</span> 西分区 <strong>UAV-01</strong></div><div class="member"><span class="num">B</span> 东分区 <strong>UAV-02</strong></div></div>
+      <div class="card" style="display:flex;flex-direction:column"><div class="card-head"><strong>任务规划地图 <small>ENU · 模拟预览</small></strong><span class="pill blue">分区覆盖</span></div><div class="map" style="flex:1"><span class="map-title">区域 A　 ·　西 / 东两条独立扫描路线</span><div class="zone z1"><label>西分区 · UAV-01</label></div><div class="zone z2"><label>东分区 · UAV-02</label></div><svg class="route" viewBox="0 0 550 400" preserveAspectRatio="none"><path d="M277 361 L108 285 L218 285 L218 238 L108 238 L108 192 L218 192 L218 148 L108 148"/><path class="alt" d="M277 361 L435 286 L326 286 L326 238 L435 238 L435 193 L326 193 L326 147 L435 147"/></svg><span class="home">H</span><span class="map-help">虚线为规划路线，非飞行实测轨迹</span></div></div>
+      <div class="card card-pad"><span class="eyebrow">任务动作</span><h3 style="margin-top:14px">分区协作规则</h3><div class="kv"><span>西分区执行者</span><b>UAV-01</b></div><div class="kv"><span>东分区执行者</span><b>UAV-02</b></div><div class="kv"><span>汇总条件</span><b>两区完成</b></div><div class="divider"></div><h3>失败后如何接替？</h3><p class="tiny">如果一架飞机退出，本次任务停止自动完结；须重新分配剩余扫描段或记录部分完成。</p><div class="notice warning">⚠ 修改分区或成员后，原检查结果自动失效。</div><div class="buttons" style="margin-top:16px"><button class="btn">编辑分区</button><button class="btn">查看路线细节</button></div></div>
+    </section>
+
+    <section class="stage s4">
+      <div class="card card-pad"><span class="eyebrow">PRE-FLIGHT REVIEW · 方案版本 v2</span><h2 style="margin-top:10px">方案检查与预演</h2><p class="muted" style="margin:0 0 11px">检查结果绑定本次方案；调整成员或航线后必须重新运行。</p><div class="notice success">✓ 阻断项 0　 ·　提醒 1　 ·　已完成本次配置检查</div><div class="check"><span>✓</span><span>成员与子任务：两个分区均有执行者</span><b>通过</b></div><div class="check"><span>✓</span><span>资源冲突：没有飞机被两个并行任务占用</span><b>通过</b></div><div class="check"><span>✓</span><span>路径范围：起点、扫描段、返航段均在教学区域内</span><b>通过</b></div><div class="check"><span>✓</span><span>预计能量余量：两架均满足当前模拟阈值</span><b>通过</b></div><div class="check warning"><span>!</span><span>预演发现两机同时进入窄通道；建议错开入场</span><b>建议调整</b></div><div class="notice" style="margin-top:14px">教学 Mock 只检查已建模的条件；「通过」不代表真实飞行安全许可。</div></div>
+      <div class="card card-pad"><span class="eyebrow">TIMELINE PREVIEW / 非实时执行</span><h3 style="margin-top:12px">协作时序</h3><div class="check"><span>01</span><span>UAV-01　先行入场</span><b>00:00</b></div><div class="check"><span>02</span><span>UAV-02　错峰进入东分区</span><b>00:15</b></div><div class="check"><span>03</span><span>独立完成扫描段</span><b>并行</b></div><div class="check"><span>04</span><span>合并有效覆盖结果</span><b>待运行</b></div><div class="section-caption">检查建议</div><div class="notice warning">建议将 UAV-02 入场延迟设为 15s；先确认，再启动模拟。预演只是预测，不生成成绩。</div><div class="buttons" style="margin-top:16px"><button class="btn">返回调整参数</button><button class="btn primary">确认建议并启动</button></div></div>
+    </section>
+
+    <section class="stage s5">
+      <div class="card side"><span class="eyebrow">运行中 · 区域搜索组</span><h3 style="margin-top:10px">任务概览</h3><div class="metric-grid" style="grid-template-columns:1fr 1fr"><div class="metric"><small>有效覆盖</small><strong>64%</strong></div><div class="metric"><small>运行时间</small><strong>03:42</strong></div></div><div class="section-caption">分区状态</div><div class="kv"><span>西分区 · UAV-01</span><b>80%</b></div><div class="progress"><i style="width:80%"></i></div><div class="kv"><span>东分区 · UAV-02</span><b>48%</b></div><div class="progress"><i style="width:48%"></i></div><div class="divider"></div><h3>组内成员</h3><div class="member"><span class="num">01</span> UAV-01 <strong>选中 · 执行中</strong></div><div class="member"><span class="num">02</span> UAV-02 <strong>执行中</strong></div><p class="tiny">需要查看其他任务时返回任务总览；严重告警始终在顶部显示。</p></div>
+      <div class="card map-wrap" style="position:relative"><div class="card-head"><strong>区域 A / 搜索组地图</strong><span class="pill blue">● 模拟运行中</span></div><div class="map"><span class="map-title">当前视图：搜索组 · 聚焦 UAV-01</span><div class="zone z1"><label>西分区 · 80%</label></div><div class="zone z2"><label>东分区 · 48%</label></div><svg class="route" viewBox="0 0 550 400" preserveAspectRatio="none"><path d="M277 361 L108 285 L218 285 L218 238 L108 238 L108 192 L167 192"/><path class="alt" d="M277 361 L435 286 L326 286 L326 238 L385 238"/></svg><span class="drone d1">◈ UAV-01</span><span class="drone d2">◈ UAV-02</span><span class="home">H</span><span class="map-help">只显示当前组的两条轨迹</span></div><div class="timeline"><div><b>03:41</b>UAV-01 完成西分区第 4 段扫描</div><div><b>03:35</b>UAV-02 开始东分区第 3 段扫描</div><div><b>02:57</b>两机状态检查完成</div></div><div class="incident"><strong>⚠ UAV-02 链路中断 · 尚未处置</strong><p>东分区暂停上报，已保留最后可信位置（03:42）。西分区可继续执行。</p><div class="buttons"><button class="btn">查看任务影响</button><button class="btn danger">制定接替方案</button></div></div></div>
+      <div class="card side"><span class="eyebrow">单机聚焦 / UAV-01</span><h3 style="margin-top:11px">当前任务：西分区扫描</h3><div class="kv"><span>飞行状态</span><b>模拟执行中</b></div><div class="kv"><span>当前高度</span><b>23.8 m</b></div><div class="kv"><span>当前速度</span><b>7.9 m/s</b></div><div class="kv"><span>剩余电量</span><b>83%</b></div><div class="kv"><span>最新上报</span><b>03:42</b></div><div class="divider"></div><div class="notice">本机计划：高度 24m、速度 8m/s。选中单机不会隐藏同组其他飞机的任务状态。</div><div class="buttons" style="margin-top:15px"><button class="btn">聚焦路线</button><button class="btn">查看事件</button></div></div>
+    </section>
+
+    <section class="stage s6">
+      <div class="card card-pad"><span class="eyebrow">DEBRIEF　/　本次真实运行结果，不是预设模板分数</span><h2 style="margin-top:8px">区域搜索 · 运行报告 <span class="pill">已完成</span></h2><div class="metric-grid" style="margin-top:14px"><div class="metric"><small>有效覆盖</small><strong>97%</strong></div><div class="metric"><small>参与任务无人机</small><strong>2 架</strong></div><div class="metric"><small>模拟执行时间</small><strong>05:18</strong></div></div><div class="section-caption">任务达成证据</div><div class="check"><span>✓</span><span>西分区：UAV-01 完成计划扫描段</span><b>轨迹 #S1</b></div><div class="check"><span>✓</span><span>东分区：UAV-02 完成计划扫描段</span><b>轨迹 #S2</b></div><div class="check"><span>✓</span><span>组级目标：有效覆盖率达到当前模板阈值</span><b>指标 #C1</b></div><div class="check"><span>✓</span><span>运行结束：两架模拟返回 Home 并确认停止</span><b>事件 #R1</b></div><div class="notice success" style="margin-top:13px">本次报告只评价「区域搜索」一关；其余四关没有运行，不显示“5/5完成”。</div><div class="buttons" style="margin-top:13px"><button class="btn">查看事件时间轴</button><button class="btn">同场景单机对照</button></div></div>
+      <div class="card card-pad"><span class="eyebrow">LEARNING OUTCOME</span><div class="report-hero" style="margin-top:11px"><div><span>本关考核成绩</span><strong>86 <span>/ 100</span></strong></div><span style="align-self:center">规则版本 V1<br>依据本次证据计算</span></div><div class="section-caption">分项表现</div><div class="kv"><span>任务目标达成</span><b>37 / 40</b></div><div class="kv"><span>角色与方案</span><b>22 / 25</b></div><div class="kv"><span>协作质量</span><b>12 / 15</b></div><div class="kv"><span>异常处置</span><b>15 / 20</b></div><div class="divider"></div><div class="notice">本图展示“有异常考核运行”的示例数据；自由练习没有异常时，该项应标为“不适用”，不直接给满分。</div><div class="buttons" style="margin-top:9px"><button class="btn">导出 JSON</button><button class="btn primary">保存并返回任务目录</button></div></div>
+    </section>
+    <footer class="footer"><span id="footer-info">任务目录 → 选择一关 → 明确学习目标</span><div class="buttons"><button class="btn">← 返回上一步</button><button class="btn primary" id="next-action">确认任务，配置无人机 →</button></div></footer>
+  </div>
+</div>
+<div class="resource-overlay"><div class="drawer"><div class="eyebrow">资源池 / 仅展示本任务可选资源</div><h2 style="margin-top:11px">添加无人机 <span style="float:right;color:#92c1ce">×</span></h2><p class="muted">空闲且满足当前任务能力要求的资源优先显示。</p><div class="value" style="color:#9dbbcb">⌕ 搜索编号或能力</div><div class="divider"></div><div class="resource-item"><div><b>UAV-03　·　Iris 四旋翼</b><small>空闲 · 电量 100% · 支持区域搜索</small></div><button class="btn primary">加入</button></div><div class="resource-item"><div><b>UAV-04　·　Iris 四旋翼</b><small>空闲 · 电量 92% · 支持区域搜索</small></div><button class="btn primary">加入</button></div><div class="resource-item" style="opacity:.75"><div><b>UAV-05　·　Iris 四旋翼</b><small>已占用：目标跟踪组 · 不能直接抢占</small></div><span class="tiny">查看</span></div><div class="notice" style="margin-top:22px">加入新成员后必须分配角色和子任务；原方案检查结果自动失效。</div></div></div>
+<script>
+  const screen = new URLSearchParams(location.search).get('screen') ?? '1';
+  document.body.dataset.screen = screen;
+  document.body.dataset.variant = new URLSearchParams(location.search).get('variant') ?? '';
+  const headings = ['选择任务与目标','无人机配置与分工','规划协作任务','方案检查与预演','执行与异常处置','复盘与报告'];
+  const tips = ['任务目录 → 选择一关 → 明确学习目标','配置 2 架成员 → 逐机设置 → 明确分工','分区和路线由任务目标驱动，而不是只选三张模式卡','阻断项清零且方案版本未过期，才能启动模拟','运行内处理异常；查看任务组和单机，不能离开执行页后补救','本次报告只展示真实运行的当前任务及证据'];
+  const actions = ['确认任务，配置无人机 →','检查成员与角色 →','检查本次方案 →','确认后启动模拟 →','完成运行，查看报告 →','保存报告'];
+  document.querySelector('#stage-title').textContent = headings[Number(screen) - 1];
+  document.querySelector('#footer-info').textContent = tips[Number(screen) - 1];
+  document.querySelector('#next-action').textContent = actions[Number(screen) - 1];
+  if (screen === '5') document.querySelector('.head-meta').innerHTML = '<strong>● 模拟运行中</strong><br>本次运行　03:42';
+  if (screen === '6') document.querySelector('.head-meta').innerHTML = '<strong>● 报告待保存</strong><br>课程进度　1 / 5 关';
+  if (screen === '5' && document.body.dataset.variant === 'incident') {
+    document.querySelectorAll('.s5 .member strong')[1].textContent = '失联 · 待处理';
+    document.querySelector('#footer-info').textContent = '告警未处置：先确认影响并选择安全策略，暂不能结束运行';
+    document.querySelector('#next-action').disabled = true;
+  }
+</script>
+</body>
+</html>

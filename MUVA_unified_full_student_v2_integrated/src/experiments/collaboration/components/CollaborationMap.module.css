@@ -1,0 +1,35 @@
+.collaborationMap { position: relative; width: 100%; height: 100%; min-height: 300px; overflow: hidden; background: #102c38; }
+.geoMapCanvas { position: absolute; inset: 0; background: #102c38; }
+.geoMapCanvas :global(.maplibregl-canvas) { outline: none; }
+.geoMapCanvas :global(.maplibregl-ctrl-top-right) { top: 68px; right: 8px; }
+.geoMapCanvas :global(.maplibregl-ctrl-group) { overflow: hidden; border: 1px solid #1d638a; border-radius: 5px; background: #04243de8; box-shadow: 0 0 8px #00263e66; }
+.geoMapCanvas :global(.maplibregl-ctrl-icon) { filter: invert(1); }
+.geoMapCanvas :global(.maplibregl-ctrl-scale) { border-color: #f2f7ff; background: #082338bd; color: white; font-size: 9px; }
+.geoMapCanvas :global(.maplibregl-ctrl-attrib) { background: #e4edf1e8; font-size: 8px; }
+.geoMapHeader { position: absolute; z-index: 3; top: 10px; left: 12px; display: flex; flex-direction: column; gap: 3px; max-width: calc(100% - 200px); padding: 7px 9px; border: 1px solid #295c70; border-radius: 4px; color: #e8f8ff; background: #03243ae8; font-size: 10px; pointer-events: none; }
+.geoMapHeader small { color: #90b3c7; font-size: 9px; }
+.geoMapStatus { position: absolute; z-index: 3; top: 67px; left: 12px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid #33687b; border-radius: 4px; color: #e4f2f4; background: #041b2cd9; font-size: 9px; pointer-events: none; }
+.geoMapStatus i { width: 6px; height: 6px; border-radius: 50%; background: #ffb547; }
+.geoMapReady { background: #3ee7b1 !important; box-shadow: 0 0 6px #3ee7b1; }
+.geoMapError { background: #ff5369 !important; }
+.mapOverview { position: absolute; z-index: 5; top: 10px; right: 12px; display: grid; grid-template-columns: repeat(4, auto); gap: 4px; padding: 6px; border: 1px solid #2489a6; border-radius: 6px; background: #05253bdb; box-shadow: 0 0 12px #001a2d99; }
+.mapOverview span { display: flex; min-width: 48px; flex-direction: column; align-items: center; gap: 2px; color: #7faabd; font-size: 8px; }
+.mapOverview b { color: #eafcff; font-size: 15px; }
+.geoTaskTarget { position: relative; display: flex; min-width: 74px; flex-direction: column; align-items: center; gap: 2px; padding: 5px 8px; border: 1px solid var(--group-color); border-radius: 5px; color: var(--group-color); background: #05243ded; box-shadow: 0 1px 7px #001526aa; transform: translateY(-8px); white-space: nowrap; pointer-events: none; }
+.geoTaskTarget::after { position: absolute; bottom: -7px; width: 11px; height: 11px; border-right: 1px solid var(--group-color); border-bottom: 1px solid var(--group-color); background: #05243d; content: ''; transform: rotate(45deg); }
+.geoTaskTarget b { font-size: 9px; }
+.geoTaskTarget small { color: #c2d9e3; font-size: 8px; }
+.geoTaskTargetActive { box-shadow: 0 0 13px var(--group-color); }
+.geoDrone { position: relative; display: flex; align-items: center; gap: 3px; padding: 3px 5px; border: 1px solid var(--group-color); border-radius: 4px; color: var(--group-color); background: #04263eee; font-size: 8px; cursor: pointer; box-shadow: 0 1px 4px #001526; }
+.geoDrone > span { font-size: 13px; line-height: 1; }
+.geoDroneInactive { opacity: .42; }
+.geoDroneSelected { outline: 2px solid #fff; box-shadow: 0 0 11px #fff; }
+.geoUserPoint { display: grid; width: 22px; height: 22px; place-items: center; border: 2px solid #fff59b; border-radius: 50%; color: #fffbd0; background: #765f25dd; box-shadow: 0 0 10px #ffe678; font-size: 10px; font-weight: 800; pointer-events: none; }
+.mapDrawing { cursor: crosshair; }
+.mapLegend { position: absolute; z-index: 4; bottom: 10px; left: 12px; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid #1b5f7e; border-radius: 5px; color: #c3dce7; background: #031d32dd; font-size: 9px; pointer-events: none; }
+.mapLegend span { display: flex; align-items: center; gap: 4px; }
+.mapLegend i { width: 8px; height: 8px; display: inline-block; border: 1px solid #36d5ff; }
+.legendDrone { border-radius: 50%; background: #6be4ff; }
+.legendTarget { border-radius: 50%; background: #ffe18c; }
+.mapLegend small { color: #91b3c3; font-size: 8px; }
+@media (max-width: 760px) { .mapOverview { grid-template-columns: repeat(2, auto); } .mapOverview span { min-width: 42px; } .geoMapStatus { top: auto; bottom: 52px; } .mapLegend { right: 8px; left: 8px; justify-content: space-between; gap: 5px; } }

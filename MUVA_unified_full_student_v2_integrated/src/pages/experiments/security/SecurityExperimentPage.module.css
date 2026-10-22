@@ -1,4 +1,4 @@
-.page { min-height: 100%; padding: 22px 26px 30px; color: var(--color-text-primary); background: radial-gradient(ellipse at 15% 0%, rgb(0 113 182 / 18%), transparent 45%); overflow: auto; }
+.page { height: 100%; min-height: 0; padding: 22px 26px 30px; color: var(--color-text-primary); background: radial-gradient(ellipse at 15% 0%, rgb(0 113 182 / 18%), transparent 45%); overflow: auto; }
 .header { display: flex; justify-content: space-between; gap: 24px; align-items: center; margin-bottom: 18px; }
 .header h1 { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 25px; }
 .header h1 svg { color: #48c9ff; }
