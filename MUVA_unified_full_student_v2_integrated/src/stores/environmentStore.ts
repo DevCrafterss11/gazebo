@@ -11,6 +11,7 @@ interface EnvironmentState {
   runtime: EnvironmentRuntimeStatus;
   logs: EnvironmentLogEntry[];
   isStarting: boolean;
+  isStopping: boolean;
   initialize: () => void;
   start: (request: EnvironmentStartRequest) => Promise<void>;
   stop: () => Promise<void>;
@@ -31,6 +32,7 @@ export const useEnvironmentStore = create<EnvironmentState>((set) => ({
   },
   logs: [],
   isStarting: false,
+  isStopping: false,
   initialize: () => {
     if (environmentSubscription) return;
     environmentSubscription = services.environment.subscribe((startup, runtime, logs) => {
@@ -56,14 +58,18 @@ export const useEnvironmentStore = create<EnvironmentState>((set) => ({
     }
   },
   stop: async () => {
-    await services.environment.stopEnvironment();
-    useTelemetryStore.getState().disconnect();
-    useFlightStore.getState().setDisconnected();
-    set({ isStarting: false });
-    useNotificationStore.getState().addNotification({
-      title: '仿真环境已停止',
-      detail: '遥测连接已安全断开，当前飞行控制不可用。',
-      kind: 'environment',
-    });
+    set({ isStopping: true });
+    try {
+      await services.environment.stopEnvironment();
+      useTelemetryStore.getState().disconnect();
+      useFlightStore.getState().setDisconnected();
+      useNotificationStore.getState().addNotification({
+        title: '仿真环境已停止',
+        detail: '遥测连接已安全断开，当前飞行控制不可用。',
+        kind: 'environment',
+      });
+    } finally {
+      set({ isStarting: false, isStopping: false });
+    }
   },
 }));

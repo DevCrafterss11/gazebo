@@ -4,7 +4,7 @@ import type { SwarmService } from '../swarmContract';
 
 export class ApiSwarmService implements SwarmService {
   readonly mode = 'sitl' as const;
-  readonly label = 'ArduPilot SITL · 无 Gazebo';
+  readonly label = 'Gazebo · ArduPilot SITL';
   private readonly client = axios.create({ baseURL: import.meta.env.VITE_SWARM_API_BASE_URL ?? 'http://127.0.0.1:8002/api/swarm', timeout: 180_000 });
   private snapshot: SwarmSnapshot = { status: 'DRAFT', drones: [], elapsed: 0, events: [], coverage: 0 };
   private missions: SwarmMission[] = [];
@@ -85,15 +85,42 @@ export class ApiSwarmService implements SwarmService {
   getStatus(): SwarmSnapshot { return structuredClone(this.snapshot); }
   stop(): void { this.disconnect(); }
   async shutdown(sessionId?: string): Promise<void> {
-    const currentSession = sessionId ?? this.requireSession();
-    await this.client.post('/shutdown', { sessionId: currentSession, action: 'shutdown' });
-    if (this.sessionId === currentSession) {
-      this.revision += 1;
-      this.disconnect();
-      this.sessionId = null;
-      this.missions = [];
-      this.candidatePending = false;
+    const localSession = sessionId ?? this.sessionId;
+    const { data: health } = await this.client.get<{ sessionId: string | null }>('/health');
+    if (health.sessionId !== null && typeof health.sessionId !== 'string') {
+      throw new Error('后端机群会话状态无效，未关闭机群');
     }
+
+    const backendSession = health.sessionId;
+    if (backendSession) {
+      if (backendSession !== localSession) {
+        const { data: status } = await this.client.get<SwarmSnapshot>('/status', { params: { sessionId: backendSession } });
+        const fleetIsGrounded = Array.isArray(status.drones) && status.drones.length > 0 && status.drones.every(drone =>
+          drone.connected === true && drone.armed === false && Number.isFinite(drone.altitude) && drone.altitude < 0.8);
+        if (!fleetIsGrounded) throw new Error('后端当前机群与本地进度不一致，且无法确认全部飞控在线、上锁并落地；为安全起见未关闭机群');
+      }
+      await this.client.post('/shutdown', { sessionId: backendSession, action: 'shutdown' });
+    }
+
+    this.revision += 1;
+    this.disconnect();
+    this.sessionId = null;
+    this.missions = [];
+    this.candidatePending = false;
+  }
+  async abortSimulation(sessionId?: string): Promise<void> {
+    const localSession = sessionId ?? this.sessionId;
+    const { data: health } = await this.client.get<{ sessionId: string | null }>('/health');
+    const backendSession = health.sessionId;
+    if (backendSession !== null && typeof backendSession !== 'string') throw new Error('后端机群会话状态无效，未执行中止');
+    if (backendSession) {
+      await this.client.post('/abort-simulation', { sessionId: backendSession, confirmed: true });
+    }
+    this.revision += 1;
+    this.disconnect();
+    if (!localSession || localSession === backendSession || !backendSession) this.sessionId = null;
+    this.missions = [];
+    this.candidatePending = false;
   }
   dispose(): void { this.revision += 1; this.disconnect(); this.listeners.clear(); }
 

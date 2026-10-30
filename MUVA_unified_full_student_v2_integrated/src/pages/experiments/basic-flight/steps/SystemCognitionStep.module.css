@@ -29,6 +29,7 @@
 .learning p + p { margin-top: 10px; padding-top: 10px; border-top: 1px solid #285e83; }
 .quiz { display: grid; gap: 10px; }
 .quiz label { display: grid; gap: 5px; color: #afcee3; font-size: 13px; }
+.quiz select { color-scheme: dark; background: #061e38; }
 .quiz small { color: #74e6c4; }
 .stepActions { min-height: 44px; }
 .loadingState { display: grid; height: 100%; place-items: center; color: #afcee3; }

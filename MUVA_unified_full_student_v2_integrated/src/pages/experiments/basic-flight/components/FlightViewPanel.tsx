@@ -78,6 +78,8 @@ export function FlightViewPanel() {
           sceneName: selectedScene.name,
           coordinateMode: 'scene-relative',
           configuredHome,
+          sceneCenter: { latitude: selectedScene.latitude, longitude: selectedScene.longitude },
+          initialZoom: 17.2,
           actualHome: validMapCoordinates(mapHome) ? mapHome : null,
           telemetryReady: telemetryReady && validMapCoordinates(mapHome),
           savedView,

@@ -546,7 +546,7 @@ export const useExperimentStore = create<ExperimentState>((set, get) => {
         set({ assessmentError: error instanceof Error ? error.message : '实操评分保存失败', assessment: { ...assessment, status: 'ERROR' } });
         return;
       }
-      useNotificationStore.getState().addNotification({ title: '基础飞行训练已完成', detail: '实操评分已保存，请完成步骤8理论考核后结算实验成绩。', kind: 'training' });
+      useNotificationStore.getState().addNotification({ title: '基础飞行训练已完成', detail: '实操评分已保存，Gazebo 与飞控保持运行，可前往实时飞控观察仿真；请完成步骤8理论考核后结算实验成绩。', kind: 'training' });
     },
     saveSectionQuiz: async ({ quizId, title, step, questions, answers }) => {
       if (get().isSavingSectionQuiz) return;

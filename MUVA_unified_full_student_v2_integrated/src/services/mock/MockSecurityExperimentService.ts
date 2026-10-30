@@ -1,13 +1,29 @@
-import type { SecurityExperimentService, SecurityTelemetryHandler } from '../contracts';
+import type { SecurityExperimentService, SecurityRangeSnapshot, SecurityTelemetryHandler } from '../contracts';
 import { detectSecurityEvidence, type SecurityDetectorState } from '../../domain/securityDetection';
 import type { SecurityCase, SecurityConfig, SecurityEvidence, SecurityJudgment, SecurityReport, SecurityRun, SecurityTelemetry } from '../../types/securityExperiment';
 
 interface ActiveRun { run: SecurityRun; timer: ReturnType<typeof setInterval> | null; tick: number; detector: SecurityDetectorState; replaySample: SecurityTelemetry | null; baselineSequences: number[]; recovered: number; reflection: string; judgmentsSeen: Set<string>; actualCase: Exclude<SecurityCase, 'hidden'>; seed: number; recoveryStartedAt: number | null; recoveryMs: number | null; finalReport: SecurityReport | null; }
 
 export class MockSecurityExperimentService implements SecurityExperimentService {
+  async getRangeStatus(): Promise<SecurityRangeSnapshot> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
+  async startRange(): Promise<SecurityRangeSnapshot> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。请切换到 API 数据源。'); }
+  async stopRange(): Promise<{ ok: boolean }> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
+  async takeoffRange(): Promise<unknown> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
+  async moveRange(): Promise<unknown> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
+  async landRange(): Promise<unknown> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
   private readonly runs = new Map<string, ActiveRun>();
   private readonly listeners = new Map<string, Set<{ sample: SecurityTelemetryHandler; evidence: (items: SecurityEvidence[]) => void }>>();
   private readonly history: SecurityReport[] = [];
+
+  async executeSimulationMotorStop(): Promise<{ accepted: boolean; effect: 'motors_stopped' }> {
+    throw new Error('Mock 模式没有连接 Gazebo / SITL，无法执行真实电机停止。请使用 API 数据源并启动本地仿真环境。');
+  }
+
+  async executeWaypointTampering(): Promise<{ accepted: boolean; effect: 'mission_replaced_and_started'; tamperedIndex: number; offsetMeters: number }> {
+    throw new Error('Mock 模式没有连接 Gazebo / SITL，无法执行真实航点篡改。请使用 API 数据源并启动本地仿真环境。');
+  }
+  async executeRangeMission(): Promise<{ accepted: boolean; effect: 'original_mission_started' }> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
+  async injectRangeWaypoint(): Promise<{ accepted: boolean; effect: 'guided_waypoint_injected' }> { throw new Error('Mock 模式未连接 Gazebo / SITL 靶场。'); }
 
   async createRun(config: SecurityConfig): Promise<SecurityRun> {
     const runId = crypto.randomUUID();

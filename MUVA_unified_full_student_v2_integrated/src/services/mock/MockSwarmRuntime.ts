@@ -142,16 +142,10 @@ export class MockSwarmRuntime implements SwarmService {
     this.snapshot.elapsed += delta;
     const urgentReturn = this.snapshot.drones.find((drone) => drone.state === 'RETURNING'
       && drone.completedSegments < (this.missions.find((mission) => mission.droneId === drone.droneId)?.coverageSegments.length ?? Infinity));
-    const entering = this.snapshot.drones.find((drone) => {
-      const mission = this.missions.find((item) => item.droneId === drone.droneId);
-      return drone.state === 'RUNNING' && mission?.coverageStartIndex !== undefined && drone.waypointIndex <= mission.coverageStartIndex;
-    });
-    const covering = this.snapshot.drones.some((drone) => drone.state === 'RUNNING' || drone.state === 'PAUSED');
-    const transfer = urgentReturn ?? entering ?? (!covering ? this.snapshot.drones.find((drone) => drone.state === 'RETURNING') : undefined);
-    this.snapshot.drones.forEach((drone, index) => {
+    const transfer = urgentReturn;
+    this.snapshot.drones.forEach((drone) => {
       if (drone.state === 'TAKING_OFF') {
         if (transfer && transfer.droneId !== drone.droneId) { drone.speed = 0; return; }
-        if (this.snapshot.elapsed < index * 4) return;
         drone.altitude = Math.min(drone.targetAltitude, drone.altitude + 5 * delta);
         if (drone.altitude === drone.targetAltitude) { drone.state = 'HOLDING'; this.log(`${drone.droneId} 起飞完成，悬停待命`); }
       } else if (drone.state === 'RUNNING') {
@@ -163,10 +157,10 @@ export class MockSwarmRuntime implements SwarmService {
           drone.waypointIndex += 1;
           if (mission?.coverageWaypointIndices ? mission.coverageWaypointIndices.includes(drone.waypointIndex - 1) : drone.waypointIndex >= 2 && drone.waypointIndex % 2 === 0) drone.completedSegments += 1;
           drone.progress = Math.min(100, drone.completedSegments / (mission?.coverageSegments.length || 1) * 100);
-          if (drone.waypointIndex >= (mission?.waypoints.length || 0)) { drone.state = 'RETURNING'; drone.speed = 0; drone.returnWaypoints = mission?.returnPath?.slice(1) ?? this.safeReturn(drone); this.log(`${drone.droneId} 覆盖完成，等待覆盖阶段结束后逐机返航`); }
+          if (drone.waypointIndex >= (mission?.waypoints.length || 0)) { drone.state = 'RETURNING'; drone.speed = 0; drone.returnWaypoints = mission?.returnPath?.slice(1) ?? this.safeReturn(drone); this.log(`${drone.droneId} 覆盖完成，立即独立返航`); }
         }
       } else if (drone.state === 'RETURNING') {
-        if (!transfer || transfer.droneId !== drone.droneId) { drone.speed = 0; return; }
+        if (transfer && transfer.droneId !== drone.droneId) { drone.speed = 0; return; }
         drone.returnWaypoints ??= this.safeReturn(drone);
         const target = drone.returnWaypoints[0];
         if (target && this.move(drone, target, delta)) drone.returnWaypoints.shift();
@@ -175,6 +169,9 @@ export class MockSwarmRuntime implements SwarmService {
     });
     const total = this.missions.reduce((sum, mission) => sum + mission.coverageSegments.length, 0);
     this.snapshot.coverage = total ? this.snapshot.drones.reduce((sum, drone) => sum + drone.completedSegments, 0) / total * 100 : 0;
+    if (this.snapshot.status === 'RUNNING' && this.snapshot.drones.some((drone) => drone.state === 'RETURNING')) {
+      this.snapshot.status = 'RETURNING'; this.log('已完成各自覆盖的无人机正在独立返航');
+    }
     if (this.snapshot.status === 'TAKING_OFF' && this.snapshot.drones.every((drone) => drone.state === 'HOLDING')) { this.snapshot.status = 'HOLDING'; this.log('机群悬停就绪'); }
     if (this.snapshot.drones.length && this.snapshot.drones.every((drone) => terminal(drone.state))) {
       this.snapshot.status = this.snapshot.coverage >= 99.9 ? 'COMPLETED' : 'ABORTED'; this.log(this.snapshot.status === 'COMPLETED' ? '全部任务完成' : '任务部分完成，安全结束'); this.halt();

@@ -69,6 +69,18 @@ def test_state_normalises_core_telemetry() -> None:
     assert snapshot["telemetry"]["hdop"] == 0.72
 
 
+def test_home_position_uses_geodetic_fields_not_local_coordinates() -> None:
+    state = VehicleState()
+    state.handle_message(Message(
+        "HOME_POSITION", latitude=400098000, longitude=1163268000, altitude=50000,
+        x=-48, y=-52, z=0,
+    ))
+
+    assert state.snapshot("test")["home"] == {
+        "valid": True, "latitude": 40.0098, "longitude": 116.3268, "altitude": 50.0,
+    }
+
+
 def test_relative_position_uses_north_east_metres() -> None:
     north, east = relative_position_meters(34.34169, 108.939908, 34.3416, 108.9398)
 

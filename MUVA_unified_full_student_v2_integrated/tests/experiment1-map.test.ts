@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { setImmediate as flush } from 'node:timers/promises';
 
-import { flightMapContextId, homeDistanceMeters, initialFlightMapView, mergeFlightMapTrack, offscreenVehicleIndicator, rebaseMapCoordinates, validFlightMapView } from '../src/domain/flightMap';
+import { flightMapContextId, homeDistanceMeters, initialFlightMapView, mergeFlightMapTrack, offscreenVehicleIndicator, rebaseMapCoordinates, segmentFlightMapTrack, validFlightMapView } from '../src/domain/flightMap';
 import { createDefaultConfiguration, mockScenes } from '../src/mocks/configuration';
 import { mockDroneModels } from '../src/mocks/flight';
 import { mockExperiment } from '../src/mocks/experiment';
@@ -167,6 +167,15 @@ test('snapshot merge excludes earlier sessions and missing timestamps, sorts and
   const result = mergeFlightMapTrack([point(90), point(120), { ...point(130), timestamp: undefined }], [point(110, 1), point(120)], 100);
   assert.deepEqual(result.map((item) => item.timestamp), [110, 120]);
   assert.equal(mergeFlightMapTrack([], [{ ...point(120), latitude: Number.NaN }], 100).length, 0);
+});
+
+test('display track breaks long telemetry gaps and impossible jumps without deleting points', () => {
+  const raw = [point(1_000), point(2_000, 4), point(10_000, 5), point(11_000, 80)];
+  const segments = segmentFlightMapTrack(raw);
+
+  assert.deepEqual(segments.map((segment) => segment.map((item) => item.timestamp)), [[1_000, 2_000], [10_000]]);
+  assert.equal(segments.flat().length, raw.length - 1);
+  assert.deepEqual(raw.map((item) => item.north), [0, 4, 5, 80]);
 });
 
 test('API map adapter converts Gateway track timestamps from seconds to milliseconds', async () => {

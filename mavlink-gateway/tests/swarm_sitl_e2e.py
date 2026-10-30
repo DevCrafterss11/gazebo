@@ -1,4 +1,4 @@
-"""Opt-in, isolated two-ArduCopter flight test; never starts Gazebo or experiment 1.
+"""Opt-in, isolated two-ArduCopter/Gazebo flight test; never touches experiment 1.
 
     MUVA_RUN_SWARM_SITL_E2E=1 PYTHONPATH=.packages:. python3 tests/swarm_sitl_e2e.py
 """
@@ -33,6 +33,7 @@ def main() -> None:
     if os.getenv("MUVA_RUN_SWARM_SITL_E2E") != "1":
         raise SystemExit("Set MUVA_RUN_SWARM_SITL_E2E=1 to arm two isolated SITL aircraft")
     os.environ.setdefault("MUVA_SWARM_SITL_BASE_PORT", "16960")
+    os.environ.setdefault("MUVA_SWARM_FDM_BASE_PORT", "19402")
     with tempfile.TemporaryDirectory(prefix="muva-swarm-e2e-") as directory:
         runtime = SwarmSitlRuntime(state_dir=Path(directory))
         config = {"count": 2, "altitude": 10, "speed": 5, "spacing": 10, "safety": 5,
@@ -45,8 +46,9 @@ def main() -> None:
                     return response.json()
 
                 health = client.get("/api/swarm/health").json()
-                assert health["gazebo"] is False and health["ekfPreflight"] is True
+                assert health["gazeboWorldAvailable"] is True and health["ekfPreflight"] is True
                 initialized = post("configure", {"config": config})
+                assert client.get("/api/swarm/health").json()["gazebo"] is True
                 session_id = initialized["runtime"]["sessionId"]
                 assert len(initialized["drones"]) == 2
                 assert [drone["sysId"] for drone in initialized["drones"]] == [21, 22]

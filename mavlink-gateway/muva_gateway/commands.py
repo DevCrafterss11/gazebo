@@ -184,6 +184,34 @@ class CommandService:
                 raise CommandTimeoutError(f"Armed state did not change after command acknowledgement{suffix}")
             return {"accepted": True, "armed": arm, "modeChanged": mode_changed, "mode": self.state.vehicle_value("mode"), "ack": ack}
 
+    def simulation_motor_stop(self) -> dict[str, Any]:
+        """Force-disarm the connected SITL vehicle for the isolated attack demo."""
+        with self._operation():
+            self._ensure_online()
+            if not self.state.vehicle_value("armed"):
+                raise CommandRejectedError("无人机未解锁，无法演示电机锁死")
+            if float(self.state.telemetry_value("altitude") or 0.0) <= 1.0:
+                raise CommandRejectedError("需要先将 SITL 无人机飞至 1 米以上，再执行坠落演示")
+            command = mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+            generation = self.state.ack_generation(command)
+            status_generation = self.state.status_generation()
+            target_system, target_component = self.state.target
+            self._record_tx("COMMAND_LONG", f"SIMULATION MOTOR STOP · target={target_system}/{target_component}")
+            self.transport.send(
+                lambda connection: connection.mav.command_long_send(
+                    target_system, target_component, command, 0,
+                    0.0, 21196.0, 0, 0, 0, 0, 0,
+                )
+            )
+            ack = self._wait_for_ack(command, generation, status_generation)
+            changed = self.state.wait_for(
+                lambda: self.state.vehicle_value("armed") is False,
+                self.settings.command_timeout,
+            )
+            if not changed:
+                raise CommandTimeoutError("SITL 未确认电机停止")
+            return {"accepted": True, "armed": False, "ack": ack, "effect": "motors_stopped"}
+
     def takeoff(self, altitude: float) -> dict[str, Any]:
         if not 2 <= altitude <= 120:
             raise InvalidCommandError("Takeoff altitude must be between 2 and 120 metres")
@@ -315,6 +343,42 @@ class CommandService:
             if not self.state.vehicle_value("armed"):
                 raise CommandRejectedError("Vehicle is not armed")
             return self._set_mode_locked("LAND")
+
+    def inject_waypoint(self, latitude: float, longitude: float, altitude: float) -> dict[str, Any]:
+        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            raise InvalidCommandError("Waypoint coordinates are outside valid geographic bounds")
+        if not 0.5 <= altitude <= 10:
+            raise InvalidCommandError("Waypoint altitude must be between 0.5 and 10 metres")
+        with self._operation():
+            self._ensure_online()
+            if not self.state.vehicle_value("armed"):
+                raise CommandRejectedError("Vehicle must be airborne before injecting a waypoint")
+            current_altitude = float(self.state.telemetry_value("altitude") or 0.0)
+            if current_altitude < 1:
+                raise CommandRejectedError("Vehicle must be at least 1 metre above ground")
+            if self.state.vehicle_value("mode") != "GUIDED":
+                self._set_mode_locked("GUIDED")
+            target_system, target_component = self.state.target
+            type_mask = (
+                mavutil.mavlink.POSITION_TARGET_TYPEMASK_VX_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_VY_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_VZ_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+                | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+            )
+            self._record_tx("SET_POSITION_TARGET_GLOBAL_INT",
+                            f"WAYPOINT_INJECTION · lat={latitude:.7f} lon={longitude:.7f} alt={altitude:.1f}m mode=GUIDED")
+            self.transport.send(lambda connection: connection.mav.set_position_target_global_int_send(
+                int(time.time() * 1000) & 0xFFFFFFFF, target_system, target_component,
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, type_mask,
+                int(round(latitude * 1e7)), int(round(longitude * 1e7)), altitude,
+                0, 0, 0, 0, 0, 0, 0, 0,
+            ))
+            return {"accepted": True, "effect": "guided_waypoint_injected", "latitude": latitude,
+                    "longitude": longitude, "altitude": altitude, "mode": "GUIDED"}
 
     def rtl(self) -> dict[str, Any]:
         with self._operation():

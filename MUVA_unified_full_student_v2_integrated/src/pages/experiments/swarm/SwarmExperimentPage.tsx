@@ -79,8 +79,8 @@ function FlightStep({ run }: { run: SwarmRun }) {
   </div>;
 }
 
-function ResultStep({ run }: { run: SwarmRun }) {
-  const { save, newRun } = useSwarmStore.getState();
+function ResultStep({ run, onNewRun }: { run: SwarmRun; onNewRun: () => void }) {
+  const { save } = useSwarmStore.getState();
   const busy = useSwarmStore((state) => state.busy);
   const runtimeLabel = useSwarmStore((state) => state.runtimeLabel);
   const [playback, setPlayback] = useState(100);
@@ -95,49 +95,92 @@ function ResultStep({ run }: { run: SwarmRun }) {
     <PanelShell icon={Trophy} title="评分结果"><div className={styles.scoreLayout}><div className={styles.scoreShield}><strong>{result.score}</strong><small>分</small><b>{result.score >= 85 ? '优秀' : result.score >= 60 ? '合格' : '待改进'}</b></div><div className={styles.scoreItems}>{[['机群配置与安全着陆', run.snapshot?.drones.every((drone) => drone.state === 'LANDED') ? 10 : 0, 10], ['规划与航线执行', result.status === 'COMPLETED' ? 20 : 0, 20], ['区域覆盖率', Math.round(result.coverage * 0.7), 70]].map(([title, points, maximum]) => <div key={String(title)}><span>{title}</span><b>{points} / {maximum}</b><i><em style={{ width: `${Number(points) / Number(maximum) * 100}%` }} /></i></div>)}</div></div></PanelShell>
     <PanelShell icon={Play} title="飞行轨迹回放" className={`${styles.mapPanel} ${styles.resultMap}`}><SwarmMap run={replay} /><div className={styles.playback}><span>{duration(result.elapsed * playback / 100)} / {duration(result.elapsed)}</span><input aria-label="轨迹回放进度" type="range" min="0" max="100" value={playback} onChange={(event) => setPlayback(Number(event.target.value))} /><span>{playback}%</span></div></PanelShell>
     <PanelShell icon={ClipboardList} title="实验记录与报告"><div className={styles.infoRows}><div>实验编号 <b>{run.id.slice(0, 24)}</b></div><div>开始时间 <b>{new Date(run.createdAt).toLocaleString('zh-CN')}</b></div><div>结束时间 <b>{new Date(result.completedAt).toLocaleString('zh-CN')}</b></div><div>实验模式 <b>{runtimeLabel}</b></div><div>无人机数量 <b>{run.config.count} 架</b></div><div>实验状态 <b className={result.status === 'COMPLETED' ? styles.success : styles.warning}>{result.status}</b></div></div><h3>关键事件记录</h3><div className={styles.logs}>{result.events.slice(-5).map((event, index) => <span key={index}><i />{event}</span>)}</div>{result.feedback.map((message) => <p className={styles.helper} key={message}>{message}</p>)}</PanelShell>
-    <div className={styles.resultActions}><button className={styles.primaryButton} type="button" onClick={() => { save(); setSaved(true); }}><ClipboardCheck size={17} />{saved ? '记录已保存' : '保存实验记录'}</button><button className={styles.primaryButton} type="button" onClick={exportReport}><Download size={17} />导出报告</button><button className={styles.primaryButton} type="button" disabled={busy} onClick={() => void newRun()}><RotateCcw size={17} />{busy ? '确认落地并关闭旧飞控…' : '重新实验'}</button><Link to="/experiments"><ArrowLeft size={17} />返回实验中心</Link></div>
+    <div className={styles.resultActions}><button className={styles.primaryButton} type="button" onClick={() => { save(); setSaved(true); }}><ClipboardCheck size={17} />{saved ? '记录已保存' : '保存实验记录'}</button><button className={styles.primaryButton} type="button" onClick={exportReport}><Download size={17} />导出报告</button><button className={styles.primaryButton} type="button" disabled={busy} onClick={onNewRun}><RotateCcw size={17} />新建实验草稿</button><Link to="/experiments"><ArrowLeft size={17} />返回实验中心</Link></div>
   </div>;
 }
 
 export function SwarmExperimentPage() {
-  const { run, savedDrafts, error, busy, newRun, restoreDraft, resume, navigate, leave } = useSwarmStore();
+  const { run, savedDrafts, error, busy, newRun, abortRuntimeAndNewRun, restoreDraft, resume, navigate, leave } = useSwarmStore();
   const [active, setActive] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'new' | 'abort' | 'leave' | null>(null);
+  const flightActive = !!run?.snapshot && (run.snapshot.drones.some((drone) => drone.armed || !['READY', 'LANDED'].includes(drone.state))
+    || ['TAKING_OFF', 'HOLDING', 'RUNNING', 'PAUSED', 'RETURNING', 'FAILED'].includes(run.snapshot.status));
   const startNew = async () => {
     if (busy) return;
-    if (run && !run.result && !window.confirm('当前实验进度将保留，可在入口重新恢复。新实验从空白区域开始，是否继续？')) return;
-    const previousId = run?.id;
+    if (flightActive || run && !run.result) { setConfirmAction('new'); return; }
     await newRun();
-    if (useSwarmStore.getState().run?.id !== previousId) setActive(true);
+    setActive(true);
   };
   useEffect(() => {
     if (!active) return;
     resume();
     window.addEventListener('pagehide', leave);
     const restore = () => resume();
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      const current = useSwarmStore.getState().run;
+      const airborne = current?.snapshot && (current.snapshot.drones.some((drone) => drone.armed || !['READY', 'LANDED'].includes(drone.state))
+        || ['TAKING_OFF', 'HOLDING', 'RUNNING', 'PAUSED', 'RETURNING', 'FAILED'].includes(current.snapshot.status));
+      if (!airborne) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
     window.addEventListener('pageshow', restore);
-    return () => { window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', restore); leave(); };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => { window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', restore); window.removeEventListener('beforeunload', warnBeforeUnload); leave(); };
   }, [active, leave, resume]);
+  const confirmation = confirmAction && <ConfirmDialog
+    title={confirmAction === 'new' ? '新建实验草稿' : confirmAction === 'abort' ? '中止并回收 SITL 仿真' : '保留进度并返回'}
+    description={confirmAction === 'new'
+      ? '当前进度会归档为本地草稿，再创建一份全新的实验进度。此操作不会关闭或重置任何后端飞控会话；若机群仍在飞行，请先返航并确认落地。是否继续？'
+      : confirmAction === 'abort'
+        ? '这会强制终止本 MUVA 实验二管理的 Gazebo 与 SITL 进程，不会发送返航/降落指令，也不代表已安全着陆。当前实验将作为中止进度保留。仅在仿真卡死且接受中断时操作。'
+        : '当前进度会保留。离开后页面将断开实时遥测，但不会暂停、返航或关闭飞控；请先确认机群状态，是否继续？'}
+    confirmLabel={confirmAction === 'new' ? '归档并新建草稿' : confirmAction === 'abort' ? '确认中止仿真' : '保留并离开'}
+    onCancel={() => setConfirmAction(null)}
+    onConfirm={async () => {
+      const action = confirmAction;
+      setConfirmAction(null);
+      if (action === 'new') {
+        await newRun();
+        setActive(true);
+      } else if (action === 'abort') {
+        await abortRuntimeAndNewRun();
+        if (!useSwarmStore.getState().error) setActive(true);
+      } else {
+        leave();
+        setActive(false);
+      }
+    }}
+  />;
   if (!run || !active) return <div className={styles.page}>
     <div className={styles.experimentHeading}><div className={styles.headingIcon}><ClipboardList size={28} /></div><div><h1>实验二：多无人机集群区域规划与协同飞行</h1><p>通过多无人机的区域覆盖任务，学习机群任务分配、航线规划与协同起降，掌握集群作业的基本方法。</p></div></div>
     <div className={styles.entry}><PanelShell icon={Boxes} title="实验介绍">
       <h2>从区域规划到协同巡航</h2><p>先自主绘制任务边界，再生成智能覆盖航线。新实验不会自动载入区域、分区或航线；教学示例需手动载入。</p>
       <div className={styles.entryStages}>{names.map((name, index) => <div key={name}><span>{index + 1}</span>{name}</div>)}</div>
       {error && <div role="alert" className={styles.error}>{error}</div>}
-      {run && !run.result && <div className={styles.progressSummary}><strong>上次进度已保留</strong><span>{new Date(run.createdAt).toLocaleString('zh-CN')} · 当前阶段：{names[run.step - 1]} · 飞行进度 {(run.snapshot?.coverage ?? 0).toFixed(1)}%</span><small>点击继续才恢复运行；等待选择期间不推进飞行。</small></div>}
+      {run && !run.result && <div className={`${styles.progressSummary} ${run.snapshot?.interrupted ? styles.progressInterrupted : ''}`}>
+        <strong>{run.snapshot?.interrupted ? '上次实验已中断' : '检测到未完成的实验'}</strong>
+        <span>{new Date(run.createdAt).toLocaleString('zh-CN')} · 阶段：{names[run.step - 1] ?? names[0]} · 任务进度 {(run.snapshot?.coverage ?? 0).toFixed(1)}%</span>
+        <small>{run.snapshot?.interrupted
+          ? '该记录仅保留本地规划和日志，不会尝试恢复已中断的飞控会话。可以查看记录，或新建实验重新初始化。'
+          : '继续将尝试恢复这份实验的运行状态。若飞控离线或状态不确定，请勿解锁；可先新建独立实验，旧进度仍会保留。'}</small>
+      </div>}
       <div className={styles.actions}>
-        <button className={styles.primaryButton} type="button" onClick={startNew}>{run && !run.result ? '重新开始实验' : '开始新实验'} <ArrowRight size={17} /></button>
-        {run && !run.result && <button type="button" onClick={() => setActive(true)}>继续上次进度</button>}
-        {run?.result && <button type="button" onClick={() => setActive(true)}>查看上次结果</button>}
+        {run && !run.result && <button className={styles.primaryButton} type="button" disabled={busy} onClick={() => { setActive(true); }}><Play size={16} />{run.snapshot?.interrupted ? '查看中断记录' : '继续上次实验'}</button>}
+        {run?.result && <button className={styles.primaryButton} type="button" onClick={() => setActive(true)}><BarChart3 size={16} />查看上次结果</button>}
+        <button className={run && !run.result ? '' : styles.primaryButton} type="button" disabled={busy} onClick={startNew}><RotateCcw size={16} />{run && !run.result ? '新建实验' : '开始新实验'} <ArrowRight size={16} /></button>
       </div>
-      {savedDrafts.some((draft) => draft.id !== run?.id) && <section className={styles.savedProgress} aria-label="已保留的实验进度"><h3>已保留的实验进度</h3><ul>{savedDrafts.filter((draft) => draft.id !== run?.id).map((draft) => <li key={draft.id}><div><strong>{new Date(draft.createdAt).toLocaleString('zh-CN')}</strong><small>{names[draft.step - 1]} · {(draft.snapshot?.coverage ?? 0).toFixed(1)}% · {duration(draft.snapshot?.elapsed ?? 0)}</small></div><button type="button" aria-label={`恢复保留进度 ${draft.id}`} onClick={() => { restoreDraft(draft.id); if (useSwarmStore.getState().run?.id === draft.id && !useSwarmStore.getState().error) setActive(true); }}>恢复这份进度</button></li>)}</ul></section>}
-      <p>本地已保存 {savedSwarmRecords().length} 条实验二结果记录。重新开始会保留未完成进度，不删除已有实验记录。</p>
+      {run?.config.simulationMode === 'sitl' && <div className={styles.dangerAction}><p>仅当真实仿真卡死且确认接受强制中止风险时使用。中止不等于安全着陆。</p><button type="button" disabled={busy} onClick={() => setConfirmAction('abort')}>中止并回收 SITL 仿真</button></div>}
+      {savedDrafts.some((draft) => draft.id !== run?.id) && <section className={styles.savedProgress} aria-label="已保留的实验进度"><h3>其他已保留进度</h3><ul>{savedDrafts.filter((draft) => draft.id !== run?.id).map((draft) => <li key={draft.id}><div><strong>{new Date(draft.createdAt).toLocaleString('zh-CN')}</strong><small>{names[draft.step - 1] ?? names[0]} · {(draft.snapshot?.coverage ?? 0).toFixed(1)}% · {duration(draft.snapshot?.elapsed ?? 0)}{draft.snapshot?.interrupted ? ' · 已中断' : ''}</small></div><button type="button" aria-label={`恢复保留进度 ${draft.id}`} onClick={() => { restoreDraft(draft.id); if (useSwarmStore.getState().run?.id === draft.id && !useSwarmStore.getState().error) setActive(true); }}>打开记录</button></li>)}</ul></section>}
+      <p className={styles.entryFootnote}>本地已保存 {savedSwarmRecords().length} 条实验二结果。新建实验不会删除历史结果或自动关闭真实飞控；开始真实飞行前，请确认机群已安全落地。</p>
     </PanelShell></div>
+    {confirmation}
   </div>;
   const allowed = (step: number) => step <= 2 || step === 3 && !!run.area && !!run.snapshot || step === 4 && run.confirmed && missionUploaded(run) || step === 5 && missionUploaded(run) && run.checks.length > 0 && run.checks.every((item) => item.status === 'PASSED') || step === 6 && !!run.result;
   const completed = (step: number) => step < run.step && (step !== 2 || !!run.area) && (step !== 3 || run.confirmed) && (step !== 4 || run.checks.length > 0 && run.checks.every((item) => item.status === 'PASSED'));
-  return <div className={styles.page}><div className={styles.experimentHeading}><div className={styles.headingIcon}><ClipboardList size={28} /></div><div><h1>实验二：多无人机集群区域规划与协同飞行</h1><p>通过多无人机的区域覆盖任务，学习机群任务分配、航线规划与协同起降，掌握集群作业的基本方法。</p></div><div className={styles.sessionActions}><button type="button" onClick={() => { leave(); setActive(false); }}><Save size={13} />保留进度并返回</button><button type="button" onClick={startNew}><RotateCcw size={13} />重新开始实验</button></div></div>
+  return <div className={styles.page}><div className={styles.experimentHeading}><div className={styles.headingIcon}><ClipboardList size={28} /></div><div><h1>实验二：多无人机集群区域规划与协同飞行</h1><p>通过多无人机的区域覆盖任务，学习机群任务分配、航线规划与协同起降，掌握集群作业的基本方法。</p></div><div className={styles.sessionActions}><button type="button" onClick={() => setConfirmAction('leave')}><Save size={13} />保留进度并返回</button><button type="button" onClick={startNew}><RotateCcw size={13} />新建实验草稿</button></div></div>
     <nav className={styles.stepper} aria-label="实验步骤">{names.map((title, index) => <button key={title} type="button" disabled={!allowed(index + 1) || index + 1 === run.step} className={index + 1 === run.step ? styles.currentStep : completed(index + 1) ? styles.completedStep : ''} onClick={() => navigate(index + 1)}><span>{completed(index + 1) ? <Check size={18} /> : index + 1}</span>{title}</button>)}</nav>
     <div className={styles.content}>{error && <div role="alert" className={styles.error}>{error}<button type="button" onClick={() => useSwarmStore.getState().clearError()}>关闭</button></div>}{run.snapshot?.interrupted && run.step !== 5 && run.step !== 6 && <div className={styles.error}>上次模拟运行已中断，请重新初始化机群。<button type="button" onClick={() => useSwarmStore.getState().finish()}>中断结束并查看结果</button></div>}
-      {run.step === 1 && <ConfigStep run={run} />}{run.step === 2 && <AreaPlanningStep run={run} />}{run.step === 3 && <MissionPlanningStep run={run} />}{run.step === 4 && <CheckStep run={run} />}{run.step === 5 && <FlightStep run={run} />}{run.step === 6 && <ResultStep run={run} />}
-    </div></div>;
+      {run.step === 1 && <ConfigStep run={run} />}{run.step === 2 && <AreaPlanningStep run={run} />}{run.step === 3 && <MissionPlanningStep run={run} />}{run.step === 4 && <CheckStep run={run} />}{run.step === 5 && <FlightStep run={run} />}{run.step === 6 && <ResultStep run={run} onNewRun={() => void startNew()} />}
+    </div>{flightActive && <div className={styles.error} role="status">机群尚未确认全部落地。离开将断开页面遥测，但飞控会继续运行；建议先返航并确认落地。</div>}{confirmation}</div>;
 }

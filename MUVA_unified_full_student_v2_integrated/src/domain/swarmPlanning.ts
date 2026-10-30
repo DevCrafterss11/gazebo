@@ -341,7 +341,8 @@ export function buildCoverageMissions(area: SwarmArea, config: SwarmConfig, flee
   });
   missions.forEach((mission, index) => {
     mission.entryPath = shortestRoute(toLocal(positions[index]!), toLocal(mission.waypoints[0]!), [...obstacles, ...waitingBoxes(missions, index, config, 'entry', fleet)]).map(toGeo);
-    mission.returnPath = shortestRoute(toLocal(mission.waypoints.at(-1)!), toLocal(fleet?.[index]?.homePosition ?? positions[index]!), [...obstacles, ...waitingBoxes(missions, index, config, 'return', fleet)]).map(toGeo);
+    mission.returnPath = shortestRoute(toLocal(mission.waypoints.at(-1)!), toLocal(fleet?.[index]?.homePosition ?? positions[index]!),
+      [...obstacles, ...waitingBoxes(missions, index, config, 'return', fleet)]).map(toGeo);
     const entry = mission.entryPath.slice(1, -1);
     mission.coverageStartIndex = entry.length;
     mission.coverageWaypointIndices = mission.coverageWaypointIndices!.map((position) => position + entry.length);

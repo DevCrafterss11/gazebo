@@ -29,6 +29,11 @@ class CommandRequest(BaseModel):
     droneId: str | None = None
 
 
+class AbortSimulationRequest(BaseModel):
+    sessionId: str
+    confirmed: bool = False
+
+
 def create_swarm_app(runtime: SwarmSitlRuntime | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -38,7 +43,7 @@ def create_swarm_app(runtime: SwarmSitlRuntime | None = None) -> FastAPI:
         finally:
             application.state.runtime.close()
 
-    application = FastAPI(title="MUVA Experiment 2 native SITL", lifespan=lifespan)
+    application = FastAPI(title="MUVA Experiment 2 Gazebo SITL", lifespan=lifespan)
     origins = os.getenv("MUVA_SWARM_CORS_ORIGINS", "http://127.0.0.1:5174,http://localhost:5174").split(",")
     application.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
@@ -50,7 +55,9 @@ def create_swarm_app(runtime: SwarmSitlRuntime | None = None) -> FastAPI:
     @application.get("/api/swarm/health")
     def health():
         service = application.state.runtime
-        return {"experiment": 2, "mode": "sitl", "gazebo": False, "ekfPreflight": True,
+        template = service.workspace / "ardupilot_gazebo/worlds/experiment2_swarm.sdf"
+        return {"experiment": 2, "mode": "sitl-gazebo", "gazebo": bool(service.gazebo and service.gazebo.poll() is None),
+                "gazeboWorldAvailable": template.is_file(), "ekfPreflight": True,
                 "sitlBinaryAvailable": service.binary.is_file(), "sessionId": service.session_id}
 
     @application.post("/api/swarm/configure")
@@ -80,6 +87,12 @@ def create_swarm_app(runtime: SwarmSitlRuntime | None = None) -> FastAPI:
         service = application.state.runtime
         service.shutdown(request.sessionId)
         return {"stopped": True}
+
+    @application.post("/api/swarm/abort-simulation")
+    def abort_simulation(request: AbortSimulationRequest):
+        service = application.state.runtime
+        service.abort_simulation(request.sessionId, request.confirmed)
+        return {"aborted": True, "landed": False}
 
     @application.websocket("/ws/swarm")
     async def telemetry(socket: WebSocket):

@@ -208,6 +208,12 @@
 }
 
 .flightPage .pageHeader { margin-bottom: 0; }
+.flightHeaderActions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.flightHeaderActions > span { display: inline-flex; align-items: center; gap: 7px; color: #77d9ff; font-size: 11px; white-space: nowrap; }
+.stopConfirmation { display: grid; gap: 18px; }
+.stopConfirmation p { margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.65; }
+.stopConfirmation > div { display: flex; justify-content: flex-end; gap: 10px; }
+.stopError { margin: 0; padding: 10px 14px; border: 1px solid #a94943; border-radius: 6px; color: #ffc0b5; background: rgb(118 40 35 / 24%); font-size: 12px; }
 
 .flightGrid {
   display: grid;

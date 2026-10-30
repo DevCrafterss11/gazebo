@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import json
 import logging
+import math
 import os
 import random
 import threading
@@ -23,6 +25,7 @@ from .commands import CommandService, GatewayCommandError
 from .config import Settings
 from .missions import MissionService
 from .monitor import ReadOnlyMavlinkMonitor
+from .runtime_processes import RuntimeProcesses
 from .state import VehicleState, relative_position_meters
 from .transport import MavlinkTransport
 
@@ -55,6 +58,21 @@ class MissionItemRequest(BaseModel):
 class MissionUploadRequest(BaseModel):
     items: list[MissionItemRequest] = Field(min_length=2, max_length=200)
     verify: bool = True
+
+
+class WaypointTamperingRequest(BaseModel):
+    waypoints: list[dict[str, float]] = Field(min_length=2, max_length=6)
+    offsetSide: str = Field(pattern="^(left|right)$")
+
+
+class RouteExecutionRequest(BaseModel):
+    waypoints: list[dict[str, float]] = Field(min_length=2, max_length=6)
+
+
+class WaypointInjectionRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    altitude: float = Field(ge=0.5, le=10)
 
 
 class ExperimentCreateRequest(BaseModel):
@@ -110,6 +128,9 @@ class Gateway:
         self.state = VehicleState(settings.heartbeat_timeout)
         self.transport = MavlinkTransport(settings, self.state)
         self.monitor = ReadOnlyMavlinkMonitor(settings.monitor_endpoint, settings.heartbeat_timeout)
+        project_dir = Path(os.getenv("MUVA_PROJECT_DIR", Path(__file__).resolve().parents[2]))
+        default_log_dir = Path(os.getenv("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "muva" / "logs"
+        self.runtime_processes = RuntimeProcesses(project_dir, Path(os.getenv("MUVA_LOG_DIR", default_log_dir)))
         operation_lock = threading.RLock()
         self.operation_lock = operation_lock
         self.commands = CommandService(
@@ -138,12 +159,13 @@ class Gateway:
         self._load_platform_data()
 
     def start(self) -> None:
-        self.transport.start()
-        self.monitor.start()
+        # The teaching platform and API stay available without launching SITL.
+        return
 
     def stop(self) -> None:
         self.monitor.stop()
         self.transport.stop()
+        self.runtime_processes.stop()
 
     def _load_platform_data(self) -> None:
         try:
@@ -191,13 +213,19 @@ class Gateway:
         snapshot = self.vehicle_snapshot()
         online = bool(snapshot["connection"]["connected"])
         transport = bool(snapshot["connection"]["transportConnected"])
+        process_is_running = getattr(self.runtime_processes, "is_running", None)
+        process_is_managed = getattr(self.runtime_processes, "is_managed", None)
+        gazebo_managed = process_is_managed("gazebo") if process_is_managed else bool(process_is_running)
+        sitl_managed = process_is_managed("sitl") if process_is_managed else bool(process_is_running)
+        gazebo_running = process_is_running("gazebo") if process_is_running and gazebo_managed else online
+        sitl_running = process_is_running("sitl") if process_is_running and sitl_managed else transport
         telemetry = snapshot["telemetry"]
         gps = int(telemetry.get("gpsFixType", 0)) >= 3 and int(telemetry.get("satellites", 0)) >= 6
         imu_mask = mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_GYRO | mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_ACCEL
         imu = all(int(telemetry.get(field, 0)) & imu_mask == imu_mask for field in ("sensorsPresent", "sensorsEnabled", "sensorsHealth"))
         return {
-            "gazebo": "RUNNING" if online else "STOPPED",
-            "ardupilotSitl": "RUNNING" if transport else "STOPPED",
+            "gazebo": "RUNNING" if gazebo_running else "STOPPED",
+            "ardupilotSitl": "RUNNING" if sitl_running else "STOPPED",
             "mavlinkGateway": "CONNECTED" if transport else "DISCONNECTED",
             "heartbeat": "OK" if online else "WAITING",
             "gps": "3D FIX" if gps else "WAITING",
@@ -261,17 +289,27 @@ SCENES: list[dict[str, Any]] = [
 ]
 
 
-def create_app(settings: Settings | None = None, gateway: Gateway | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, gateway: Gateway | None = None, security_range: Gateway | None = None) -> FastAPI:
     configured_settings = settings or Settings.from_env()
     configured_gateway = gateway or Gateway(configured_settings)
+    range_settings = replace(
+        configured_settings,
+        mavlink_endpoint=os.getenv("MUVA_SECURITY_MAVLINK_ENDPOINT", "udpin:0.0.0.0:14652"),
+        monitor_endpoint=os.getenv("MUVA_SECURITY_MONITOR_ENDPOINT", "udpin:0.0.0.0:14653"),
+    )
+    range_gateway = security_range or Gateway(range_settings)
+    range_gateway.runtime_processes.log_dir = range_gateway.runtime_processes.log_dir / "security-range"
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.gateway = configured_gateway
+        app.state.security_range = range_gateway
         configured_gateway.start()
+        range_gateway.start()
         try:
             yield
         finally:
+            range_gateway.stop()
             configured_gateway.stop()
 
     app = FastAPI(
@@ -280,6 +318,7 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
         lifespan=lifespan,
     )
     app.state.gateway = configured_gateway
+    app.state.security_range = range_gateway
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(configured_settings.cors_origins),
@@ -290,6 +329,9 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
 
     def gateway_from_request(request: Request) -> Gateway:
         return request.app.state.gateway
+
+    def range_from_request(request: Request) -> Gateway:
+        return request.app.state.security_range
 
     def safety_context(gateway_instance: Gateway) -> dict[str, Any]:
         snapshot = gateway_instance.vehicle_snapshot()
@@ -678,6 +720,152 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     async def v1_runtime_status(request: Request) -> dict[str, str]:
         return gateway_from_request(request).runtime_status()
 
+    @app.get("/api/v1/security/range/status")
+    async def security_range_status(request: Request) -> dict[str, Any]:
+        target = range_from_request(request)
+        return {"runtime": target.runtime_status(), "vehicle": target.vehicle_snapshot(), "active": target._runtime_active}
+
+    @app.post("/api/v1/security/range/start")
+    async def security_range_start(request: Request) -> dict[str, Any]:
+        target = range_from_request(request)
+        if target._runtime_active:
+            runtime = target.runtime_status()
+            if runtime["gazebo"] == "RUNNING" and runtime["ardupilotSitl"] == "RUNNING":
+                return {"runtime": runtime, "vehicle": target.vehicle_snapshot(), "active": True}
+            target.append_runtime_log("RECOVERING_SIMULATION", "检测到靶场进程未完整运行，正在重新启动 Gazebo / SITL")
+            target._runtime_active = False
+            target.monitor.stop()
+            target.transport.stop()
+            target.state.set_transport_connected(False)
+        target.append_runtime_log("STARTING_SIMULATION", "正在启动实验四专属 Gazebo / SITL 靶场")
+        started_processes: list[str] = []
+        try:
+            started_processes = target.runtime_processes.start({
+                "MUVA_SITL_MAVLINK_PORT": os.getenv("MUVA_SECURITY_SITL_MAVLINK_PORT", "14652"),
+                "MUVA_SITL_MONITOR_PORT": os.getenv("MUVA_SECURITY_SITL_MONITOR_PORT", "14653"),
+            }) or []
+            target.transport.start()
+            target.monitor.start()
+            target._runtime_active = True
+            readiness = target.runtime_status()
+            if readiness["gazebo"] != "RUNNING" or readiness["ardupilotSitl"] != "RUNNING":
+                raise RuntimeError(
+                    "启动命令已执行，但未检测到 Gazebo 与 ArduPilot SITL 均在运行；请检查靶场运行日志"
+                )
+            snapshot = target.vehicle_snapshot()
+            if readiness["gps"] != "3D FIX" or readiness["ekf"] != "HEALTHY" or not snapshot["home"].get("valid"):
+                target.append_runtime_log(
+                    "WAITING_FOR_TELEMETRY",
+                    "仿真进程仍在运行，飞控 GPS、IMU/EKF 或 HOME 尚未就绪；保留进程并继续等待遥测",
+                )
+            target._flight_max_altitude = 10.0
+        except Exception as error:
+            target._runtime_active = False
+            target.monitor.stop()
+            target.transport.stop()
+            if started_processes:
+                target.runtime_processes.stop(started_processes)
+            raise HTTPException(status_code=503, detail=f"实验四靶场启动失败：{error}") from error
+        return {"runtime": target.runtime_status(), "vehicle": target.vehicle_snapshot(), "active": True}
+
+    @app.post("/api/v1/security/range/stop")
+    async def security_range_stop(request: Request) -> dict[str, bool]:
+        target = range_from_request(request)
+        if target._runtime_active:
+            connection = target.vehicle_snapshot()["connection"]
+            if not connection["connected"] or connection.get("lastHeartbeatAgeMs") is None or connection["lastHeartbeatAgeMs"] > target.settings.heartbeat_timeout * 1000:
+                raise HTTPException(status_code=409, detail="飞控心跳离线或过期，无法确认落地状态；靶场保持运行，请恢复心跳后再关闭")
+        snapshot = target.vehicle_snapshot()
+        if snapshot["vehicle"].get("armed") or abs(float(snapshot["telemetry"].get("altitude", 0))) > 0.5:
+            raise HTTPException(status_code=409, detail="请先安全降落并确认飞行器已锁定、位于地面，再关闭靶场")
+        target._runtime_active = False
+        target.monitor.stop()
+        target.transport.stop()
+        target.runtime_processes.stop()
+        target.state.set_transport_connected(False)
+        return {"ok": True}
+
+    @app.post("/api/v1/security/range/takeoff")
+    async def security_range_takeoff(request: Request, payload: TakeoffRequest) -> dict[str, Any]:
+        target = range_from_request(request)
+        if not target._runtime_active:
+            raise HTTPException(status_code=409, detail="请先启动实验四专属靶场")
+        if payload.altitude > 10:
+            raise HTTPException(status_code=422, detail="靶场最大起飞高度为 10 米")
+        readiness = target.runtime_status()
+        if readiness["gps"] != "3D FIX" or readiness["ekf"] != "HEALTHY":
+            raise HTTPException(status_code=409, detail="飞控尚未就绪：请等待 GPS 3D 定位和 IMU/EKF 健康后再起飞")
+        if not target.vehicle_snapshot()["home"].get("valid"):
+            raise HTTPException(status_code=409, detail="飞控 HOME 尚未建立，请等待定位完成后再起飞")
+        await asyncio.to_thread(target.commands.arm, True)
+        return await asyncio.to_thread(target.commands.takeoff, payload.altitude)
+
+    @app.post("/api/v1/security/range/move")
+    async def security_range_move(request: Request, payload: VehicleMoveRequest) -> dict[str, Any]:
+        target = range_from_request(request)
+        if not target._runtime_active:
+            raise HTTPException(status_code=409, detail="请先启动实验四专属靶场")
+        if payload.direction not in ("forward", "backward", "left", "right") or not 0 < payload.meters <= 5:
+            raise HTTPException(status_code=422, detail="仅支持前后左右移动，单次距离须在 0–5 米内")
+        snapshot = target.vehicle_snapshot()
+        if not snapshot["connection"]["connected"] or snapshot["connection"].get("lastHeartbeatAgeMs") is None or snapshot["connection"]["lastHeartbeatAgeMs"] > target.settings.heartbeat_timeout * 1000:
+            raise HTTPException(status_code=409, detail="飞控心跳已过期，拒绝发送位置指令")
+        if not snapshot["vehicle"].get("armed") or float(snapshot["telemetry"].get("altitude", 0)) < 1:
+            raise HTTPException(status_code=409, detail="前后左右操作仅允许在已解锁且离地 1 米以上时执行")
+        if not snapshot["home"].get("valid"):
+            raise HTTPException(status_code=409, detail="飞控 HOME 无效，拒绝发送位置指令")
+        return await asyncio.to_thread(target.commands.move, payload.direction, payload.meters)
+
+    @app.post("/api/v1/security/range/mission-start")
+    async def security_range_mission_start(request: Request, payload: RouteExecutionRequest) -> dict[str, Any]:
+        target = range_from_request(request)
+        snapshot = target.vehicle_snapshot()
+        runtime = target.runtime_status()
+        if not target._runtime_active or runtime["ardupilotSitl"] != "RUNNING" or runtime["gazebo"] != "RUNNING":
+            raise HTTPException(status_code=409, detail="请先启动实验四 Gazebo / SITL 靶场")
+        if not snapshot["connection"]["connected"] or snapshot["connection"].get("lastHeartbeatAgeMs") is None or snapshot["connection"]["lastHeartbeatAgeMs"] > target.settings.heartbeat_timeout * 1000:
+            raise HTTPException(status_code=409, detail="飞控心跳已过期，不能执行航线")
+        if snapshot["vehicle"].get("armed") or abs(float(snapshot["telemetry"].get("altitude", 999))) > 0.5:
+            raise HTTPException(status_code=409, detail="执行新航线前必须确认无人机已落地并锁定")
+        home = snapshot["home"]
+        if not home.get("valid"):
+            raise HTTPException(status_code=409, detail="飞控 HOME 无效")
+        for index, point in enumerate(payload.waypoints):
+            lat, lon = float(point["latitude"]), float(point["longitude"])
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise HTTPException(status_code=422, detail=f"第 {index + 1} 个航点坐标无效")
+        altitude = min(10.0, max(2.0, target._flight_max_altitude))
+        mission = [{"command": "TAKEOFF", "latitude": home["latitude"], "longitude": home["longitude"], "altitude": 6.0}]
+        mission.extend({"command": "WAYPOINT", "latitude": p["latitude"], "longitude": p["longitude"], "altitude": altitude} for p in payload.waypoints)
+        mission.append({"command": "LAND", "latitude": home["latitude"], "longitude": home["longitude"], "altitude": 0.0})
+        uploaded = await asyncio.to_thread(target.missions.upload, mission, True)
+        await asyncio.to_thread(target.commands.arm, True)
+        started = await asyncio.to_thread(target.missions.start, target.commands)
+        return {"accepted": True, "effect": "original_mission_started", "uploaded": uploaded, "mission": started}
+
+    @app.post("/api/v1/security/range/inject-waypoint")
+    async def security_range_inject_waypoint(request: Request, payload: WaypointInjectionRequest) -> dict[str, Any]:
+        target = range_from_request(request)
+        if not target._runtime_active:
+            raise HTTPException(status_code=409, detail="请先启动实验四专属靶场")
+        snapshot = target.vehicle_snapshot()
+        if not snapshot["connection"]["connected"] or snapshot["connection"].get("lastHeartbeatAgeMs") is None or snapshot["connection"]["lastHeartbeatAgeMs"] > target.settings.heartbeat_timeout * 1000:
+            raise HTTPException(status_code=409, detail="飞控心跳已过期，拒绝注入航点")
+        if not snapshot["home"].get("valid"):
+            raise HTTPException(status_code=409, detail="飞控 HOME 无效，拒绝注入航点")
+        if not snapshot["vehicle"].get("armed") or float(snapshot["telemetry"].get("altitude", 0)) < 1:
+            raise HTTPException(status_code=409, detail="航点注入仅允许在无人机离地 1 米以上时执行")
+        result = await asyncio.to_thread(target.commands.inject_waypoint, payload.latitude, payload.longitude, payload.altitude)
+        target.monitor.state.record_local_event("WAYPOINT_INJECTION", "security", "warning", f"lat={payload.latitude:.7f} lon={payload.longitude:.7f} alt={payload.altitude:.1f}")
+        return result
+
+    @app.post("/api/v1/security/range/land")
+    async def security_range_land(request: Request) -> dict[str, Any]:
+        target = range_from_request(request)
+        if not target._runtime_active:
+            raise HTTPException(status_code=409, detail="实验四专属靶场未启动")
+        return await asyncio.to_thread(target.commands.land)
+
     @app.get("/api/v1/runtime/logs")
     async def v1_runtime_logs(request: Request) -> list[dict[str, Any]]:
         return deepcopy(gateway_from_request(request)._runtime_logs)
@@ -695,16 +883,26 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
             raise HTTPException(status_code=422, detail="最大飞行高度无效") from None
         if not 2 <= maximum <= 120:
             raise HTTPException(status_code=422, detail="最大飞行高度必须在 2–120 米之间")
-        gateway_instance.transport.start()
-        gateway_instance.monitor.start()
-        gateway_instance.append_runtime_log("STARTING_MAVLINK_GATEWAY", "正在连接 MAVLink Gateway")
-        deadline = time.monotonic() + max(2.0, gateway_instance.settings.heartbeat_timeout * 4)
-        while time.monotonic() < deadline and not gateway_instance.state.is_online():
-            await asyncio.sleep(0.1)
-        if not gateway_instance.state.is_online():
+        if gateway_instance.vehicle_snapshot()["vehicle"].get("armed", False):
+            raise HTTPException(status_code=409, detail="飞行器仍处于解锁状态，不能启动或重启仿真")
+        gateway_instance.append_runtime_log("STARTING_SIMULATION", "正在启动 Gazebo 与 ArduPilot SITL")
+        try:
+            gateway_instance.runtime_processes.start()
+            gateway_instance.transport.start()
+            gateway_instance.monitor.start()
+            gateway_instance.append_runtime_log("STARTING_MAVLINK_GATEWAY", "正在连接 MAVLink Gateway")
+            deadline = time.monotonic() + max(10.0, gateway_instance.settings.heartbeat_timeout * 8)
+            while time.monotonic() < deadline and not gateway_instance.state.is_online():
+                await asyncio.sleep(0.1)
+            if not gateway_instance.state.is_online():
+                raise ConnectionError("No recent vehicle heartbeat")
+        except Exception as error:
             gateway_instance._runtime_active = False
-            gateway_instance.append_runtime_log("ERROR", "未收到飞行器 Heartbeat，环境启动失败")
-            raise ConnectionError("No recent vehicle heartbeat")
+            gateway_instance.monitor.stop()
+            gateway_instance.transport.stop()
+            gateway_instance.runtime_processes.stop()
+            gateway_instance.append_runtime_log("ERROR", f"仿真环境启动失败：{error}")
+            raise HTTPException(status_code=503, detail=f"仿真环境启动失败：{error}") from error
         gateway_instance._runtime_active = True
         gateway_instance._flight_max_altitude = maximum
         gateway_instance._sessions[experiment_id]["status"] = "RUNNING"
@@ -716,11 +914,13 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/runtime/stop")
     async def v1_runtime_stop(request: Request) -> dict[str, bool]:
         gateway_instance = gateway_from_request(request)
+        if gateway_instance.vehicle_snapshot()["vehicle"].get("armed", False):
+            raise HTTPException(status_code=409, detail="飞行器仍处于解锁状态，请先降落并锁定后再结束训练")
         gateway_instance._runtime_active = False
-        # Gazebo, SITL and the gateway transport are owned by the root
-        # all-in-one launcher.  Ending or restarting one experiment must not
-        # tear down that shared infrastructure, otherwise the next step-4
-        # request waits for a heartbeat that can never arrive.
+        gateway_instance.monitor.stop()
+        gateway_instance.transport.stop()
+        gateway_instance.runtime_processes.stop()
+        gateway_instance.state.set_transport_connected(False)
         gateway_instance.append_runtime_log("IDLE", "环境已停止")
         return {"ok": True}
 
@@ -789,6 +989,73 @@ def create_app(settings: Settings | None = None, gateway: Gateway | None = None)
     @app.post("/api/v1/vehicle/disarm")
     async def v1_vehicle_disarm(request: Request) -> dict[str, Any]:
         return await asyncio.to_thread(gateway_from_request(request).commands.arm, False)
+
+    @app.post("/api/v1/security/simulation/motor-stop")
+    async def v1_security_simulation_motor_stop(request: Request) -> dict[str, Any]:
+        gateway_instance = range_from_request(request)
+        runtime = gateway_instance.runtime_status()
+        if not gateway_instance._runtime_active or runtime["ardupilotSitl"] != "RUNNING" or runtime["gazebo"] != "RUNNING":
+            raise HTTPException(status_code=409, detail="该攻击仅允许在 Gateway 管理的本地 ArduPilot SITL 仿真运行时执行")
+        snapshot = gateway_instance.vehicle_snapshot()
+        if not snapshot["connection"]["connected"] or snapshot["connection"].get("lastHeartbeatAgeMs") is None or snapshot["connection"]["lastHeartbeatAgeMs"] > gateway_instance.settings.heartbeat_timeout * 1000:
+            raise HTTPException(status_code=409, detail="飞控心跳已过期，拒绝发送电机停止攻击")
+        if not snapshot["vehicle"].get("armed") or float(snapshot["telemetry"].get("altitude", 0)) < 1:
+            raise HTTPException(status_code=409, detail="电机停止攻击仅允许在已解锁且离地 1 米以上时执行")
+        return await asyncio.to_thread(gateway_instance.commands.simulation_motor_stop)
+
+    @app.post("/api/v1/security/simulation/waypoint-tampering")
+    async def v1_security_waypoint_tampering(request: Request, payload: WaypointTamperingRequest) -> dict[str, Any]:
+        gateway_instance = range_from_request(request)
+        runtime = gateway_instance.runtime_status()
+        if not gateway_instance._runtime_active or runtime["ardupilotSitl"] != "RUNNING" or runtime["gazebo"] != "RUNNING":
+            raise HTTPException(status_code=409, detail="航点篡改仅允许在 Gateway 管理的本地 Gazebo / SITL 运行时执行")
+        snapshot = gateway_instance.vehicle_snapshot()
+        if not snapshot["connection"]["connected"] or snapshot["connection"].get("lastHeartbeatAgeMs") is None or snapshot["connection"]["lastHeartbeatAgeMs"] > gateway_instance.settings.heartbeat_timeout * 1000:
+            raise HTTPException(status_code=409, detail="飞控心跳已过期，拒绝替换任务")
+        if snapshot["vehicle"].get("armed"):
+            raise HTTPException(status_code=409, detail="无人机已解锁；请先安全降落并锁定，再规划篡改航线")
+        telemetry = snapshot["telemetry"]
+        if abs(float(telemetry.get("altitude", 999))) > 0.5:
+            raise HTTPException(status_code=409, detail="当前高度未确认在地面，拒绝替换任务")
+        home = snapshot["home"]
+        if not home.get("valid"):
+            raise HTTPException(status_code=409, detail="飞控 HOME 无效，不能安全限定航线范围")
+
+        home_lat = float(home["latitude"])
+        home_lon = float(home["longitude"])
+        latitude_scale = 111_111.0
+        longitude_scale = latitude_scale * max(0.01, abs(math.cos(home_lat * math.pi / 180)))
+        points: list[tuple[float, float]] = []
+        for index, point in enumerate(payload.waypoints):
+            lat, lon = float(point.get("latitude", float("nan"))), float(point.get("longitude", float("nan")))
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise HTTPException(status_code=422, detail=f"第 {index + 1} 个航点坐标无效")
+            points.append((lat, lon))
+
+        target_index = len(points) // 2
+        before = points[max(0, target_index - 1)]
+        target = points[target_index]
+        after = points[min(len(points) - 1, target_index + 1)]
+        north_delta = (after[0] - before[0]) * latitude_scale
+        east_delta = (after[1] - before[1]) * longitude_scale
+        length = (north_delta * north_delta + east_delta * east_delta) ** 0.5
+        if length < 0.1:
+            raise HTTPException(status_code=422, detail="相邻航点重合，无法计算航点篡改方向")
+        side = 1 if payload.offsetSide == "right" else -1
+        changed = list(points)
+        changed[target_index] = (
+            target[0] + side * east_delta / length * 6 / latitude_scale,
+            target[1] - side * north_delta / length * 6 / longitude_scale,
+        )
+        altitude = min(10.0, max(2.0, gateway_instance._flight_max_altitude))
+        mission_items = [{"command": "TAKEOFF", "latitude": home_lat, "longitude": home_lon, "altitude": 6.0}]
+        mission_items.extend({"command": "WAYPOINT", "latitude": lat, "longitude": lon, "altitude": altitude} for lat, lon in changed)
+        mission_items.append({"command": "LAND", "latitude": home_lat, "longitude": home_lon, "altitude": 0.0})
+        await asyncio.to_thread(gateway_instance.missions.upload, mission_items, True)
+        await asyncio.to_thread(gateway_instance.commands.arm, True)
+        result = await asyncio.to_thread(gateway_instance.missions.start, gateway_instance.commands)
+        gateway_instance.monitor.state.record_local_event("MISSION_TAMPER", "security", "warning", f"waypoint={target_index + 1} offset=6m side={payload.offsetSide}")
+        return {"accepted": True, "effect": "mission_replaced_and_started", "tamperedIndex": target_index, "offsetMeters": 6.0, "mission": result}
 
     @app.post("/api/v1/vehicle/takeoff")
     async def v1_vehicle_takeoff(request: Request, payload: dict[str, Any]) -> dict[str, Any]:

@@ -15,8 +15,15 @@ export const validFlightMapView = (value: unknown): value is FlightMapView => {
     && typeof view.zoom === 'number' && Number.isFinite(view.zoom) && view.zoom >= 0 && view.zoom <= 22;
 };
 
-export const initialFlightMapView = (contextId: string, home: MapCoordinates, saved: FlightMapView | null): FlightMapView =>
-  validFlightMapView(saved) && saved.contextId === contextId ? saved : { contextId, center: { latitude: home.latitude, longitude: home.longitude }, zoom: 18 };
+export const initialFlightMapView = (
+  contextId: string,
+  home: MapCoordinates,
+  saved: FlightMapView | null,
+  center: MapCoordinates = home,
+  zoom = 17.2,
+): FlightMapView => validFlightMapView(saved) && saved.contextId === contextId
+  ? saved
+  : { contextId, center: { latitude: center.latitude, longitude: center.longitude }, zoom };
 
 export const homeDistanceMeters = (configured: MapCoordinates, actual: MapCoordinates): number => {
   const radians = Math.PI / 180;
@@ -67,4 +74,45 @@ export const mergeFlightMapTrack = (snapshot: FlightPathPoint[], live: FlightPat
     unique.set(`${point.timestamp ?? ''}:${point.latitude}:${point.longitude}`, point);
   });
   return [...unique.values()].sort((first, second) => (first.timestamp ?? 0) - (second.timestamp ?? 0)).slice(-600);
+};
+
+export const segmentFlightMapTrack = (
+  points: FlightPathPoint[],
+  maxGapMs = 5_000,
+  maxSpeedMetersPerSecond = 30,
+): FlightPathPoint[][] => {
+  const segments: FlightPathPoint[][] = [];
+  const distanceMeters = (first: FlightPathPoint, second: FlightPathPoint): number => {
+    const latitudeScale = 111_111;
+    const north = (second.latitude - first.latitude) * latitudeScale;
+    const east = (((second.longitude - first.longitude + 540) % 360) - 180)
+      * latitudeScale * Math.cos(first.latitude * Math.PI / 180);
+    return Math.hypot(north, east);
+  };
+
+  points.slice(-600).forEach((point) => {
+    if (!validMapCoordinates(point) || !Number.isFinite(point.north) || !Number.isFinite(point.east)) {
+      segments.push([]);
+      return;
+    }
+    const current = segments.at(-1);
+    const previous = current?.at(-1);
+    if (!previous) {
+      if (!current) segments.push([point]);
+      else current.push(point);
+      return;
+    }
+    const elapsedMs = point.timestamp! - previous.timestamp!;
+    const distance = distanceMeters(previous, point);
+    const invalidTiming = !Number.isFinite(point.timestamp) || !Number.isFinite(previous.timestamp) || elapsedMs <= 0;
+    const impossibleJump = !invalidTiming && distance / (elapsedMs / 1000) > maxSpeedMetersPerSecond;
+    if (impossibleJump) {
+      segments.push([]);
+      return;
+    }
+    if (invalidTiming || elapsedMs > maxGapMs || !current) segments.push([point]);
+    else current.push(point);
+  });
+
+  return segments.filter((segment) => segment.length > 0);
 };

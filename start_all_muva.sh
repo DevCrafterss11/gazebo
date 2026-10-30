@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# MUVA one-click launcher. It owns every process it starts, keeps their logs,
-# and shuts the complete stack down when this launcher exits.
+# Start both API gateways and the unified frontend. Simulation processes remain on demand.
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 state_dir="${XDG_STATE_HOME:-${HOME}/.local/state}/muva"
@@ -12,6 +11,8 @@ log_dir="${state_dir}/logs/${session_id}"
 lock_file="${runtime_dir}/all-in-one.lock"
 pid_file="${runtime_dir}/all-in-one.pid"
 browser_url="http://127.0.0.1:5173"
+swarm_api_url="http://127.0.0.1:8002/api/swarm"
+swarm_ws_url="ws://127.0.0.1:8002/ws/swarm"
 
 mkdir -p "${log_dir}" "${runtime_dir}"
 
@@ -35,6 +36,8 @@ printf '%s\n' "$$" >"${pid_file}"
 declare -a service_names=()
 declare -a service_pids=()
 cleanup_started=0
+swarm_shutdown_confirmed=0
+swarm_gateway_started=0
 
 log() {
     printf '[%(%H:%M:%S)T] %s\n' -1 "$*"
@@ -51,6 +54,45 @@ fail() {
 
 port_in_use() {
     ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -Eq ":${1}$"
+}
+
+wait_for_http() {
+    local url="$1"
+    local pid_index="$2"
+    local service_name="$3"
+    local attempts="$4"
+    for _ in $(seq 1 "${attempts}"); do
+        if curl -fsS --max-time 1 "${url}" >/dev/null 2>&1; then return 0; fi
+        kill -0 "${service_pids[pid_index]}" 2>/dev/null || fail "${service_name} 已意外退出"
+        sleep 0.2
+    done
+    fail "${service_name} 未能在规定时间内就绪"
+}
+
+check_swarm_health() {
+    curl -fsS --max-time 2 http://127.0.0.1:8002/api/swarm/health 2>/dev/null \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("experiment") == 2 and d.get("mode") == "sitl-gazebo" and d.get("gazeboWorldAvailable") is True' >/dev/null 2>&1
+}
+
+safe_shutdown_swarm() {
+    local health session_id response
+    ((swarm_gateway_started == 1)) || return 0
+    health="$(curl -fsS --max-time 2 http://127.0.0.1:8002/api/swarm/health 2>/dev/null)" || {
+        log "实验二网关无法确认状态；为安全起见保留所有服务"
+        return 1
+    }
+    if ! printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("experiment") == 2 and d.get("mode") == "sitl-gazebo"' >/dev/null 2>&1; then
+        log "8002 不是受本启动器管理的实验二服务；为安全起见不停止服务"
+        return 1
+    fi
+    session_id="$(printf '%s' "${health}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sessionId") or "")')"
+    [[ -z "${session_id}" ]] && return 0
+    response="$(curl -fsS --max-time 25 -X POST http://127.0.0.1:8002/api/swarm/shutdown \
+        -H 'Content-Type: application/json' -d "{\"sessionId\":\"${session_id}\",\"action\":\"shutdown\"}" 2>&1)" || {
+        log "实验二未能安全关闭：${response:-后端拒绝关闭}。请先返航并确认全部无人机落地上锁"
+        return 1
+    }
+    log "实验二机群已安全关闭"
 }
 
 start_service() {
@@ -70,6 +112,14 @@ start_service() {
 stop_all() {
     local status=$?
     (( cleanup_started == 0 )) || return "${status}"
+    if [[ -x "${project_dir}/start_security_range.sh" ]] && ! "${project_dir}/start_security_range.sh" stop; then
+        log "实验四靶场未能安全停止；保留平台服务"
+        return 1
+    fi
+    if ((swarm_shutdown_confirmed == 0)) && ! safe_shutdown_swarm; then
+        log "未停止平台服务；实验二网关保持运行以保护飞行中的机群"
+        return 1
+    fi
     cleanup_started=1
     trap - EXIT INT TERM
     rm -f "${pid_file}"
@@ -107,19 +157,33 @@ stop_all() {
     return "${status}"
 }
 
-trap stop_all EXIT
-trap 'exit 130' INT TERM
+request_stop() {
+    log "收到关闭请求，将按实验各自的安全状态停止服务..."
+    exit 0
+}
 
-for required in gz curl python3 setsid ss; do
+trap stop_all EXIT
+trap request_stop INT TERM
+
+for required in curl python3 setsid ss; do
     command -v "${required}" >/dev/null 2>&1 || fail "缺少必需命令：${required}"
 done
 
-[[ -x "${project_dir}/start_iris_gazebo.sh" ]] || fail "找不到 Gazebo 启动脚本"
-[[ -x "${project_dir}/start_iris_sitl.sh" ]] || fail "找不到 SITL 启动脚本"
 [[ -x "${project_dir}/mavlink-gateway/dev.sh" ]] || fail "找不到 MAVLink 网关启动脚本"
 [[ -x "${project_dir}/start_unified_frontend.sh" ]] || fail "找不到统一平台前端启动脚本"
+swarm_python="${project_dir}/mavlink-gateway/.venv/bin/python"
+swarm_pythonpath="${project_dir}/mavlink-gateway/.packages:${project_dir}/mavlink-gateway${PYTHONPATH:+:${PYTHONPATH}}"
+if [[ ! -x "${swarm_python}" ]] || ! "${swarm_python}" -c 'import fastapi, pymavlink, uvicorn' >/dev/null 2>&1; then
+    swarm_python=python3
+    PYTHONPATH="${swarm_pythonpath}" "${swarm_python}" -c 'import fastapi, pymavlink, uvicorn' >/dev/null 2>&1 \
+        || fail "Python 缺少实验二网关依赖；请安装 mavlink-gateway/requirements.txt"
+fi
+[[ -x "${project_dir}/ardupilot/build/sitl/bin/arducopter" ]] || fail "未找到 ArduCopter SITL；请先编译 ardupilot/build/sitl/bin/arducopter"
+[[ -f "${project_dir}/ardupilot_gazebo/build/libArduPilotPlugin.so" && -f "${project_dir}/ardupilot_gazebo/worlds/experiment2_swarm.sdf" ]] \
+    || fail "未找到实验二 Gazebo 插件或 world；请先构建 ardupilot_gazebo"
+command -v gz >/dev/null 2>&1 || fail "未找到 Gazebo Sim 的 gz 命令"
 
-for port in 8000 5173; do
+for port in 8000 8002 5173; do
     port_in_use "${port}" && fail "TCP 端口 ${port} 已被占用，请先关闭占用它的程序"
 done
 
@@ -127,69 +191,33 @@ printf '\nMUVA 仿真一键启动\n'
 printf '项目目录：%s\n' "${project_dir}"
 printf '日志目录：%s\n\n' "${log_dir}"
 
-start_service "Gazebo 仿真" "gazebo.log" "${project_dir}/start_iris_gazebo.sh"
-
-log "等待 Gazebo 初始化..."
-# The Gazebo discovery CLI may block for a long time while its transport
-# daemon starts. SITL can safely start in parallel and reconnects to the
-# simulator, so only use a short process-stability check here.
-for _ in $(seq 1 8); do
-    kill -0 "${service_pids[0]}" 2>/dev/null || fail "Gazebo 已意外退出"
-    sleep 0.5
-done
-log "Gazebo 进程运行正常"
-
-# sim_vehicle normally opens an interactive MAVProxy shell. The one-click
-# launcher has no dedicated stdin for that shell, so keep MAVProxy alive in
-# non-interactive mode while retaining its UDP outputs.
-start_service "ArduCopter SITL" "sitl.log" \
-    "${project_dir}/start_iris_sitl.sh" --mavproxy-args=--non-interactive
-start_service "MAVLink 网关" "gateway.log" "${project_dir}/mavlink-gateway/dev.sh"
-
+start_service "MAVLink 网关" "gateway.log" env MUVA_PROJECT_DIR="${project_dir}" MUVA_LOG_DIR="${log_dir}" "${project_dir}/mavlink-gateway/dev.sh"
 log "等待 MAVLink 网关 HTTP 服务..."
-gateway_ready=0
-for _ in $(seq 1 100); do
-    if curl -fsS --max-time 1 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-        gateway_ready=1
-        break
-    fi
-    kill -0 "${service_pids[2]}" 2>/dev/null || fail "MAVLink 网关已意外退出"
-    sleep 0.2
-done
-((gateway_ready == 1)) || fail "MAVLink 网关未能在 20 秒内就绪"
+wait_for_http http://127.0.0.1:8000/api/health 0 "实验一 MAVLink 网关" 100
 
-start_service "MUVA 统一教学平台" "teaching-frontend.log" env VITE_DATA_SOURCE=api "${project_dir}/start_unified_frontend.sh" --host 127.0.0.1 --port 5173
+start_service "实验二 Gazebo SITL 网关" "swarm-gateway.log" env \
+    PYTHONPATH="${swarm_pythonpath}" \
+    MUVA_SWARM_STATE_DIR="${state_dir}/experiment2" \
+    MUVA_SWARM_CORS_ORIGINS="http://127.0.0.1:5173,http://localhost:5173" \
+    "${swarm_python}" -m uvicorn muva_gateway.swarm_app:app --app-dir "${project_dir}/mavlink-gateway" --host 127.0.0.1 --port 8002
+swarm_gateway_started=1
+log "等待实验二网关 HTTP 服务..."
+wait_for_http http://127.0.0.1:8002/api/swarm/health 1 "实验二网关" 100
+check_swarm_health || fail "8002 上的服务不是预期的 Gazebo SITL 网关"
 
+"${project_dir}/start_security_range.sh" start
+
+start_service "MUVA 统一教学平台" "teaching-frontend.log" env \
+    VITE_DATA_SOURCE=api VITE_SWARM_DATA_SOURCE=api VITE_ASSESSMENT_SOURCE=mock \
+    VITE_SECURITY_API_BASE_URL="http://127.0.0.1:8004/api" \
+    VITE_SWARM_API_BASE_URL="${swarm_api_url}" VITE_SWARM_WS_URL="${swarm_ws_url}" \
+    "${project_dir}/start_unified_frontend.sh" --host 127.0.0.1 --port 5173
 log "等待 MUVA 教学平台..."
-web_ready=0
-for _ in $(seq 1 150); do
-    if curl -fsS --max-time 1 "${browser_url}" >/dev/null 2>&1; then
-        web_ready=1
-        break
-    fi
-    kill -0 "${service_pids[3]}" 2>/dev/null || fail "Web 地面站已意外退出"
-    sleep 0.2
-done
-((web_ready == 1)) || fail "MUVA 教学平台未能在 30 秒内就绪"
-
-vehicle_ready=0
-log "等待飞控心跳（Gazebo 首次加载可能需要一些时间）..."
-for _ in $(seq 1 120); do
-    if curl -fsS --max-time 1 http://127.0.0.1:8000/api/health 2>/dev/null | grep -q '"vehicleConnected":true'; then
-        vehicle_ready=1
-        break
-    fi
-    sleep 0.5
-done
+wait_for_http "${browser_url}" 2 "MUVA 统一教学平台" 150
 
 printf '\n'
-if ((vehicle_ready == 1)); then
-    log "全部组件和飞控链路均已就绪"
-    notify-send "MUVA 仿真" "Gazebo、SITL 和教学平台已全部启动" 2>/dev/null || true
-else
-    log "界面已就绪，但暂未收到飞控心跳；请查看 Gazebo 和 sitl.log"
-    notify-send "MUVA 仿真" "地面站已启动，当前仍在等待飞控心跳" 2>/dev/null || true
-fi
+log "教学平台和两个 API 网关已就绪；Gazebo/SITL 将在各实验初始化时启动"
+notify-send "MUVA 仿真" "教学平台已就绪，实验一和实验二使用独立真实仿真服务" 2>/dev/null || true
 
 xdg-open "${browser_url}" >/dev/null 2>&1 || true
 printf '\n教学平台：%s\n' "${browser_url}"

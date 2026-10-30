@@ -312,7 +312,7 @@ test('安全检查按完整线段间距识别跨机冲突，不只检查顶点�
 
 for (const { count, blocked, angle = 0 } of [{ count: 2, blocked: false }, { count: 3, blocked: false }, { count: 3, blocked: true },
   { count: 4, blocked: false }, { count: 5, blocked: false }, { count: 3, blocked: false, angle: Math.PI / 6 }, { count: 3, blocked: true, angle: Math.PI / 6 }]) {
-  test(`${count} 架逐机入场、并行扫描、逐机返航保持连续运动安全间距（禁飞绕障 ${blocked}，旋转 ${angle.toFixed(2)}）`, async () => {
+  test(`${count} 架独立入场、覆盖完成即返航并保持连续运动安全间距（禁飞绕障 ${blocked}，旋转 ${angle.toFixed(2)}）`, async () => {
     const setting = { ...config, count, altitude: 20, speed: 10, spacing: 10 };
     const rotate = ([east, north]: Point): Point => [east * Math.cos(angle) - north * Math.sin(angle), east * Math.sin(angle) + north * Math.cos(angle)];
     const area = validateArea(([[-185, 0], [-90, -10], [-64, -110], [-175, -110]] as Point[]).map((point) => toGeo(rotate(point))));
@@ -327,15 +327,8 @@ for (const { count, blocked, angle = 0 } of [{ count: 2, blocked: false }, { cou
     runtime.startMission();
     for (let step = 0; step < 4000 && runtime.getStatus().status !== 'COMPLETED'; step += 1) {
       const before = runtime.getFleet();
-      const entering = before.find((drone) => drone.state === 'RUNNING' && drone.waypointIndex <= missions.find((mission) => mission.droneId === drone.droneId)!.coverageStartIndex!);
       runtime.tick(.2);
       const after = runtime.getFleet();
-      if (entering) before.filter((drone) => drone.droneId !== entering.droneId).forEach((drone) => {
-        assert.deepEqual(after.find((other) => other.droneId === drone.droneId)!.position, drone.position, '入场期间其他无人机应等待，不沿扫描线移动');
-      });
-      if (before.some((drone) => drone.state === 'RUNNING')) before.filter((drone) => drone.state === 'RETURNING').forEach((drone) => {
-        assert.deepEqual(after.find((other) => other.droneId === drone.droneId)!.position, drone.position, '覆盖未全部完成时正常返航应等待');
-      });
       before.forEach((drone, index) => before.slice(index + 1).forEach((other, offset) => {
         const otherIndex = index + offset + 1;
         const from = toLocal(drone.position);

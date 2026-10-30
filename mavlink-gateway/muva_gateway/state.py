@@ -201,9 +201,9 @@ class VehicleState:
                 if message.hdg != 65535:
                     self._telemetry["heading"] = message.hdg / 100.0
             elif message_type == "HOME_POSITION":
-                latitude = float(message.x) / 1e7
-                longitude = float(message.y) / 1e7
-                altitude = float(message.z) / 1000.0
+                latitude = float(message.latitude) / 1e7
+                longitude = float(message.longitude) / 1e7
+                altitude = float(message.altitude) / 1000.0
                 if -90 <= latitude <= 90 and -180 <= longitude <= 180 and (abs(latitude) > 1e-6 or abs(longitude) > 1e-6):
                     self._home.update(
                         valid=True,

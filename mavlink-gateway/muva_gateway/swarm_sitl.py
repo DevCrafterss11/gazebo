@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import math
 import os
 import shutil
@@ -11,6 +12,7 @@ import sys
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -113,6 +115,11 @@ class SwarmSitlRuntime:
         self.binary = Path(os.getenv("MUVA_SWARM_SITL_BINARY", str(self.workspace / "ardupilot/build/sitl/bin/arducopter"))).resolve()
         self.state_dir = state_dir or Path(os.getenv("MUVA_SWARM_STATE_DIR", str(Path.home() / ".local/state/muva/experiment2")))
         self.base_port = int(os.getenv("MUVA_SWARM_SITL_BASE_PORT", "15760"))
+        self.fdm_base_port = int(os.getenv("MUVA_SWARM_FDM_BASE_PORT", "9202"))
+        self.gazebo: subprocess.Popen[bytes] | None = None
+        self.world_path: Path | None = None
+        self.world_name: str | None = None
+        self.partition: str | None = None
         self._lock = threading.RLock()
         self._operation = threading.Lock()
         self._stop = threading.Event()
@@ -191,7 +198,35 @@ class SwarmSitlRuntime:
                 self.require_session(session_id)
                 self.require_ground()
                 self._close_vehicles()
+                self._stop_gazebo()
                 self.session_id = None
+        finally:
+            self._operation.release()
+
+    def abort_simulation(self, session_id: str, confirmed: bool) -> None:
+        """Force-reclaim only processes owned by this isolated SITL runtime."""
+        if not confirmed:
+            raise CommandRejectedError("必须明确确认中止当前 Gazebo/SITL 仿真")
+        if not self._operation.acquire(blocking=False):
+            raise CommandRejectedError("机群正在初始化或关闭，请稍后重试")
+        try:
+            self.require_session(session_id)
+            self._cancel.set()
+            self.paused = False
+            worker = self._worker
+            if worker and worker.is_alive():
+                worker.join(timeout=10)
+                if worker.is_alive():
+                    raise CommandRejectedError("调度线程仍未响应停止请求；仿真未回收，请稍后重试并保留当前页面")
+            with self._lock:
+                self.status = "ABORTED"
+                self.finished_at = time.monotonic()
+                self.last_error = "操作员确认中止 Gazebo/SITL 仿真；未确认飞行器已安全着陆"
+                self.event(self.last_error)
+            self._close_vehicles()
+            self._stop_gazebo()
+            self.session_id = None
+            self._worker = None
         finally:
             self._operation.release()
 
@@ -203,7 +238,9 @@ class SwarmSitlRuntime:
             self.require_ground()
             if not self.binary.is_file() or not os.access(self.binary, os.X_OK):
                 raise InvalidCommandError(f"未找到 SITL 飞控可执行文件：{self.binary}；请先编译 ArduCopter SITL")
+            self._validate_gazebo_install()
             self._close_vehicles()
+            self._stop_gazebo()
             self.config = copy.deepcopy(config)
             self.config.update(simulationMode="sitl", sceneOrigin=config.get("sceneOrigin", [116.3268, 40.0098]))
             self.session_id = str(uuid.uuid4())
@@ -221,10 +258,10 @@ class SwarmSitlRuntime:
             self.state_dir.mkdir(parents=True, exist_ok=True)
             origin = self.config["sceneOrigin"]
             try:
+                self._start_gazebo(int(config["count"]), origin)
                 for index in range(int(config["count"])):
-                    east = -48 + index * 14
-                    home = [origin[0] + east / (111320 * math.cos(math.radians(origin[1]))), origin[1] - 52 / 110540]
-                    self.vehicles.append(self._launch(index, home))
+                    # Gazebo GPS already includes each model's world offset.
+                    self.vehicles.append(self._launch(index, list(origin)))
                 deadline = time.monotonic() + max(120, 30 * int(config["count"]))
                 while time.monotonic() < deadline:
                     self._check_processes()
@@ -233,7 +270,7 @@ class SwarmSitlRuntime:
                         break
                     time.sleep(.2)
                 else:
-                    raise CommandTimeoutError("等待 SITL 心跳/GPS/EKF 位置估计超时，请查看实验二独立飞控日志")
+                    raise CommandTimeoutError("等待 Gazebo-backed SITL 心跳/GPS/EKF 位置估计超时，请查看实验二独立 Gazebo 与飞控日志")
                 for vehicle in self.vehicles:
                     if vehicle.state.target[0] != vehicle.sys_id:
                         raise CommandRejectedError("飞控 SysID 与分配编号不匹配")
@@ -246,10 +283,11 @@ class SwarmSitlRuntime:
                     vehicle.trajectory = [vehicle.home]
                     self._record(vehicle, "DONE", "心跳、GPS 和 EKF 位置估计已确认，飞控可用")
                 self._open_monitors()
-                self.event(f"原生 quad SITL {len(self.vehicles)} 架已连接，参数回读通过；未启动 Gazebo")
+                self.event(f"实验二专用 Gazebo world 与 {len(self.vehicles)} 架 JSON SITL 已连接，心跳/GPS/EKF 和参数回读通过")
                 return self.snapshot()
             except Exception:
                 self._close_vehicles()
+                self._stop_gazebo()
                 self.session_id = None
                 raise
         finally:
@@ -273,8 +311,13 @@ class SwarmSitlRuntime:
         params = directory / "defaults.parm"
         params.write_text("FRAME_CLASS 1\nFRAME_TYPE 1\nSIM_SPEEDUP 1\nFS_GCS_ENABLE 0\nFS_THR_ENABLE 0\nRTL_ALT 0\nBATT_MONITOR 4\n")
         log_file = (directory / "sitl.log").open("ab")
-        process = subprocess.Popen([str(self.binary), "--model", "quad", "--speedup", "1", "--rate", "800", "--wipe",
-            "--defaults", str(params), "--base-port", str(port), "-I", str(20 + index), "--sysid", str(21 + index),
+        instance = 20 + index
+        fdm_port = self.fdm_base_port + index * 10
+        defaults_dir = self.workspace / "ardupilot/Tools/autotest/default_params"
+        defaults = f"{defaults_dir / 'copter.parm'},{defaults_dir / 'gazebo-iris.parm'},{params}"
+        process = subprocess.Popen([str(self.binary), "--model", "JSON", "--speedup", "1", "--rate", "800", "--wipe",
+            "--defaults", defaults, "--base-port", str(port), "-I", str(instance), "--sysid", str(21 + index),
+            "--sim-port-out", str(fdm_port), "--sim-address", "127.0.0.1",
             "--home", f"{home[1]},{home[0]},50,0", "--serial0", f"tcp:{port}"], cwd=directory,
             stdin=subprocess.DEVNULL, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
         settings = replace(Settings(), mavlink_endpoint=f"tcp:127.0.0.1:{port}", source_system=240,
@@ -381,7 +424,7 @@ class SwarmSitlRuntime:
             return {"status": self.status, "drones": drones, "elapsed": elapsed, "events": list(self.events),
                     "coverage": sum(vehicle.completed for vehicle in self.vehicles) / total * 100 if total else 0,
                     "missionPlanId": self.plan_id, "missionReceipts": copy.deepcopy(self.receipts),
-                    "runtime": {"sessionId": self.session_id, "mode": "sitl", "label": "ArduPilot SITL · 无 Gazebo", "connected": bool(drones) and all(drone["connected"] for drone in drones), "error": self.last_error}}
+                    "runtime": {"sessionId": self.session_id, "mode": "sitl", "label": "Gazebo · ArduPilot SITL", "connected": bool(drones) and all(drone["connected"] for drone in drones), "error": self.last_error}}
 
     def upload(self, missions: list[dict[str, Any]], plan_id: str) -> dict[str, Any]:
         if not self._operation.acquire(blocking=False):
@@ -423,14 +466,14 @@ class SwarmSitlRuntime:
             self._operation.release()
 
     def _validate_plan(self, missions: list[dict[str, Any]]) -> None:
-        from .swarm_routing import hits_box, segment_distance
+        from .swarm_routing import hits_box, timed_paths_violate_separation
         if len(missions) != len(self.vehicles) or [mission.get("droneId") for mission in missions] != [vehicle.drone_id for vehicle in self.vehicles]:
             raise InvalidCommandError("任务数量/编号与后端实际机群不匹配")
         origin = self.config["sceneOrigin"]
         local = lambda point: [(point[0] - origin[0]) * 111320 * math.cos(math.radians(origin[1])), (point[1] - origin[1]) * 110540]
         if any(not isinstance(mission.get("missionId"), str) or not mission["missionId"] for mission in missions) or len({mission["missionId"] for mission in missions}) != len(missions):
             raise InvalidCommandError("任务编号缺失或重复")
-        coverage_paths = []
+        execution_paths = []
         for vehicle, mission in zip(self.vehicles, missions):
             paths = [mission.get("waypoints", []), mission.get("entryPath", []), mission.get("returnPath", [])]
             if not paths[0] or len(paths[1]) < 1 or len(paths[2]) < 1 or not mission.get("coverageSegments"):
@@ -456,11 +499,11 @@ class SwarmSitlRuntime:
             full = [local(point) for point in [vehicle.home, *paths[0], *paths[2][1:]]]
             if any(hits_box(first, second, box) for first, second in zip(full, full[1:]) for box in boxes):
                 raise InvalidCommandError("任务穿越禁飞缓冲区")
-            coverage_paths.append([local(point) for point in paths[0][start:]])
-        for index, path in enumerate(coverage_paths):
-            for other in coverage_paths[index + 1:]:
-                if any(segment_distance([first, second], [before, after]) < self.config["safety"] + 1.5 for first, second in zip(path, path[1:]) for before, after in zip(other, other[1:])):
-                    raise InvalidCommandError("跨机覆盖航段不足安全间距与跟踪余量")
+            execution_paths.append([local(point) for point in [vehicle.home, *paths[0], *paths[2][1:]]])
+        for index, path in enumerate(execution_paths):
+            for other in execution_paths[index + 1:]:
+                if timed_paths_violate_separation(path, 0, other, 0, self.config["safety"] + 2, self.config["speed"]):
+                    raise InvalidCommandError("完整入场/覆盖/返航时间轨迹将触发安全间距；请调整分区、航线或机群速度后重新检查")
 
     def command(self, action: str, drone_id: str | None = None) -> dict[str, Any]:
         targets = [vehicle for vehicle in self.vehicles if drone_id is None or vehicle.drone_id == drone_id]
@@ -544,17 +587,26 @@ class SwarmSitlRuntime:
 
     def _takeoff(self) -> None:
         self.started_at = time.monotonic()
-        for vehicle in self.vehicles:
-            if self.return_requested and not self._returning:
-                break
-            vehicle.phase = "TAKING_OFF"
-            vehicle.commands.set_mode("GUIDED")
-            self._record(vehicle, "DONE", "飞控心跳确认 GUIDED 模式")
-            vehicle.commands.arm(True)
-            self._record(vehicle, "DONE", "飞控 ACK + 心跳确认解锁")
-            vehicle.commands.takeoff(self.config["altitude"])
-            self._record(vehicle, "DONE", f"遥测确认起飞高度 {vehicle.state.telemetry_value('altitude'):.1f} m")
-            vehicle.phase = "HOLDING"
+        vehicles = [vehicle for vehicle in self.vehicles if not self.return_requested or self._returning]
+        if not vehicles:
+            return
+        with ThreadPoolExecutor(max_workers=len(vehicles), thread_name_prefix="experiment2-takeoff") as pool:
+            futures = [pool.submit(vehicle.commands.set_mode, "GUIDED") for vehicle in vehicles]
+            for vehicle, future in zip(vehicles, futures):
+                future.result()
+                vehicle.phase = "TAKING_OFF"
+                self._record(vehicle, "DONE", "飞控心跳确认 GUIDED 模式")
+
+            futures = [pool.submit(vehicle.commands.arm, True) for vehicle in vehicles]
+            for vehicle, future in zip(vehicles, futures):
+                future.result()
+                self._record(vehicle, "DONE", "飞控 ACK + 心跳确认解锁")
+
+            futures = [pool.submit(vehicle.commands.takeoff, self.config["altitude"]) for vehicle in vehicles]
+            for vehicle, future in zip(vehicles, futures):
+                future.result()
+                self._record(vehicle, "DONE", f"遥测确认起飞高度 {vehicle.state.telemetry_value('altitude'):.1f} m")
+                vehicle.phase = "HOLDING"
         self.status = "HOLDING"
         self.event("全部飞控实际起飞高度确认，等待开始任务")
         if self.return_requested:
@@ -568,7 +620,8 @@ class SwarmSitlRuntime:
         vehicle.transport.send(lambda connection: connection.mav.set_position_target_global_int_send(0, vehicle.sys_id, vehicle.state.target[1],
             mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, 3576, round(point[1] * 1e7), round(point[0] * 1e7), self.config["altitude"], 0, 0, 0, 0, 0, 0, 0, 0))
 
-    def _move_many(self, routes: dict[str, list[list[float]]], coverage: bool = False) -> None:
+    def _move_many(self, routes: dict[str, list[list[float]]], coverage: bool = False,
+                   coverage_ranges: dict[str, tuple[int, int, int]] | None = None) -> None:
         cursors = {drone_id: 0 for drone_id in routes}
         deadlines: dict[str, float] = {}
         announced: dict[str, int] = {}
@@ -609,7 +662,8 @@ class SwarmSitlRuntime:
                 deadline = deadlines.setdefault(vehicle.drone_id, time.monotonic() + max(35, remaining / self.config["speed"] * 4 + 20))
                 if time.monotonic() > deadline:
                     raise CommandTimeoutError(f"{vehicle.drone_id} 到达航点超时")
-                vehicle.phase = "RETURNING" if self._returning else "RUNNING"
+                coverage_range = (coverage_ranges or {}).get(vehicle.drone_id)
+                vehicle.phase = "RETURNING" if self._returning or coverage_range and cursor > coverage_range[1] else "RUNNING"
                 self._target(vehicle, point)
                 if announced.get(vehicle.drone_id) != cursor:
                     self._record(vehicle, "TX", f"SET_POSITION_TARGET_GLOBAL_INT GUIDED 位置目标 {cursor + 1}/{len(path)}：{point[1]:.7f},{point[0]:.7f}；等待实际抵达")
@@ -618,29 +672,77 @@ class SwarmSitlRuntime:
                     self._record(vehicle, "DONE", f"遥测确认目标 {cursor + 1}/{len(path)} 已抵达（误差 {remaining:.2f} m）")
                     cursors[vehicle.drone_id] += 1
                     deadlines.pop(vehicle.drone_id, None)
-                    if coverage:
+                    if coverage_range and coverage_range[0] <= cursor <= coverage_range[1]:
+                        coverage_cursor = cursor - coverage_range[0]
+                        vehicle.waypoint_index = coverage_range[2] + coverage_cursor + 1
+                        mission = next(mission for mission in self.plan if mission["droneId"] == vehicle.drone_id)
+                        vehicle.completed = sum(index <= vehicle.waypoint_index for index in mission["coverageWaypointIndices"])
+                        if cursor == coverage_range[1]:
+                            vehicle.phase = "RETURNING"
+                            self.event(f"{vehicle.drone_id} 覆盖完成，立即开始返航")
+                    elif coverage:
                         mission = next(mission for mission in self.plan if mission["droneId"] == vehicle.drone_id)
                         vehicle.waypoint_index = mission.get("coverageStartIndex", 0) + cursor + 1
                         vehicle.completed = sum(index <= vehicle.waypoint_index for index in mission["coverageWaypointIndices"])
                 if cursors[vehicle.drone_id] >= len(path) and not self._returning:
-                    vehicle.phase = "HOLDING"
+                    vehicle.phase = "RETURNING" if coverage_range else "HOLDING"
             time.sleep(.2)
 
     def _execute(self) -> None:
+        routes = {}
+        coverage_ranges = {}
         for vehicle, mission in zip(self.vehicles, self.plan):
-            if vehicle.phase != "LANDED":
-                self._move_many({vehicle.drone_id: mission["entryPath"][1:]})
-                if vehicle.phase != "LANDED":
-                    vehicle.phase = "HOLDING"
-                    vehicle.waypoint_index = mission.get("coverageStartIndex", 0) + 1
-        self.event("全部入场完成，开始并行蛇形扫描")
-        self._move_many({vehicle.drone_id: mission["waypoints"][mission.get("coverageStartIndex", 0) + 1:]
-                         for vehicle, mission in zip(self.vehicles, self.plan)}, coverage=True)
+            if vehicle.phase == "LANDED":
+                continue
+            entry = mission["entryPath"][1:]
+            start_index = mission.get("coverageStartIndex", 0)
+            coverage = mission["waypoints"][start_index + 1:]
+            returning = mission["returnPath"][1:]
+            coverage_start = len(entry)
+            routes[vehicle.drone_id] = [*entry, *coverage, *returning]
+            coverage_ranges[vehicle.drone_id] = (coverage_start, coverage_start + len(coverage) - 1, start_index)
+            vehicle.phase = "RUNNING"
+            vehicle.returning = mission["returnPath"]
+        self.event("各机独立执行入场、覆盖与返航；任一飞机完成覆盖即单独返航")
+        self._move_many(routes, coverage_ranges=coverage_ranges)
         self.status = "RETURNING"
-        for vehicle, mission in zip(self.vehicles, self.plan):
-            if vehicle.phase != "LANDED":
-                self._return_vehicle(vehicle, mission["returnPath"])
+        active = [vehicle for vehicle in self.vehicles if vehicle.drone_id in routes]
+        with ThreadPoolExecutor(max_workers=max(1, len(active)), thread_name_prefix="experiment2-land") as pool:
+            futures = {vehicle.drone_id: pool.submit(self._land_vehicle, vehicle) for vehicle in active}
+            for vehicle in active:
+                futures[vehicle.drone_id].result()
+                vehicle.phase = "LANDED"
+                vehicle.returning = []
+                self._record(vehicle, "DONE", "飞控确认降落：已上锁且遥测高度低于 0.8 m")
+                self.event(f"{vehicle.drone_id} 飞控确认降落/上锁")
         self._finish()
+
+    def _return_fleet(self, routes: dict[str, list[list[float]]]) -> None:
+        active = [vehicle for vehicle in self.vehicles if vehicle.drone_id in routes]
+        if not active:
+            return
+        self._returning = True
+        for vehicle in active:
+            vehicle.phase = "RETURNING"
+            vehicle.returning = routes[vehicle.drone_id]
+        self.event("全部覆盖完成，多机并行返航")
+        self._move_many({vehicle.drone_id: routes[vehicle.drone_id][1:] for vehicle in active})
+        with ThreadPoolExecutor(max_workers=len(active), thread_name_prefix="experiment2-land") as pool:
+            futures = {vehicle.drone_id: pool.submit(self._land_vehicle, vehicle) for vehicle in active}
+            for vehicle in active:
+                futures[vehicle.drone_id].result()
+                vehicle.phase = "LANDED"
+                vehicle.returning = []
+                self._record(vehicle, "DONE", "飞控确认降落：已上锁且遥测高度低于 0.8 m")
+                self.event(f"{vehicle.drone_id} 飞控确认降落/上锁")
+        self._returning = False
+
+    @staticmethod
+    def _land_vehicle(vehicle: SitlVehicle) -> None:
+        vehicle.commands.land()
+        if not vehicle.state.wait_for(lambda: not vehicle.state.vehicle_value("armed")
+                                      and vehicle.state.telemetry_value("altitude") < .8, 100):
+            raise CommandTimeoutError(f"{vehicle.drone_id} 降落未确认")
 
     def _return_pending(self) -> None:
         pending = list(self.return_requested)
@@ -762,7 +864,164 @@ class SwarmSitlRuntime:
             vehicle.log_file.close()
         self.vehicles = []
 
+    def _validate_gazebo_install(self) -> None:
+        plugin_dir = Path(os.getenv("MUVA_ARDUPILOT_GAZEBO_DIR", str(self.workspace / "ardupilot_gazebo"))).resolve()
+        required = [
+            shutil.which("gz"),
+            str(plugin_dir / "worlds" / "experiment2_swarm.sdf"),
+            str(plugin_dir / "models" / "iris_with_ardupilot" / "model.sdf"),
+            str(plugin_dir / "build" / "libArduPilotPlugin.so"),
+            str(self.workspace / "ardupilot/Tools/autotest/default_params/copter.parm"),
+            str(self.workspace / "ardupilot/Tools/autotest/default_params/gazebo-iris.parm"),
+        ]
+        missing = [path for path in required if not path or not Path(path).is_file()]
+        if missing:
+            raise InvalidCommandError("实验二 Gazebo 依赖缺失：" + ", ".join(missing))
+
+    def _gazebo_environment(self, model_resource_path: Path) -> dict[str, str]:
+        plugin_dir = Path(os.getenv("MUVA_ARDUPILOT_GAZEBO_DIR", str(self.workspace / "ardupilot_gazebo"))).resolve()
+        environment = os.environ.copy()
+        local_lib = self.workspace / ".tools/gz-sim8/usr/lib/x86_64-linux-gnu"
+        local_plugins = local_lib / "gz-sim-8/plugins"
+        physics_plugins = local_lib / "gz-physics-7/engine-plugins"
+        if local_lib.is_dir():
+            environment["LD_LIBRARY_PATH"] = f"{local_lib}:{environment.get('LD_LIBRARY_PATH', '')}".rstrip(":")
+        if local_plugins.is_dir():
+            environment["GZ_SIM_SYSTEM_PLUGIN_PATH"] = f"{local_plugins}:{plugin_dir / 'build'}:{environment.get('GZ_SIM_SYSTEM_PLUGIN_PATH', '')}".rstrip(":")
+            environment["GZ_GUI_PLUGIN_PATH"] = f"{local_plugins / 'gui'}:{environment.get('GZ_GUI_PLUGIN_PATH', '')}".rstrip(":")
+            environment["QML2_IMPORT_PATH"] = f"{local_plugins / 'gui'}:{environment.get('QML2_IMPORT_PATH', '')}".rstrip(":")
+            environment["QML_IMPORT_PATH"] = f"{local_plugins / 'gui'}:{environment.get('QML_IMPORT_PATH', '')}".rstrip(":")
+        else:
+            environment["GZ_SIM_SYSTEM_PLUGIN_PATH"] = f"{plugin_dir / 'build'}:{environment.get('GZ_SIM_SYSTEM_PLUGIN_PATH', '')}".rstrip(":")
+        if physics_plugins.is_dir():
+            environment["GZ_SIM_PHYSICS_ENGINE_PATH"] = f"{physics_plugins}:{environment.get('GZ_SIM_PHYSICS_ENGINE_PATH', '')}".rstrip(":")
+        resources = [model_resource_path, plugin_dir / "models", plugin_dir / "worlds"]
+        environment["GZ_SIM_RESOURCE_PATH"] = ":".join([*(str(path) for path in resources), environment.get("GZ_SIM_RESOURCE_PATH", "")]).rstrip(":")
+        environment["GZ_PARTITION"] = self.partition or "MUVA_EXPERIMENT2"
+        environment["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        return environment
+
+    def _prepare_world(self, count: int, origin: list[float]) -> tuple[Path, Path]:
+        plugin_dir = Path(os.getenv("MUVA_ARDUPILOT_GAZEBO_DIR", str(self.workspace / "ardupilot_gazebo"))).resolve()
+        source_model = plugin_dir / "models" / "iris_with_ardupilot" / "model.sdf"
+        template = plugin_dir / "worlds" / "experiment2_swarm.sdf"
+        session_dir = self.state_dir / "gazebo" / (self.session_id or uuid.uuid4().hex)
+        models_dir = session_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        self.world_name = f"muva_experiment2_{(self.session_id or uuid.uuid4().hex)[:8]}"
+        world_tree = ET.parse(template)
+        world = world_tree.getroot().find("world")
+        if world is None:
+            raise InvalidCommandError(f"实验二 world 模板缺少 <world>：{template}")
+        world.set("name", self.world_name)
+        spherical = world.find("spherical_coordinates")
+        if spherical is None:
+            raise InvalidCommandError("实验二 world 模板缺少 spherical_coordinates")
+        latitude = spherical.find("latitude_deg")
+        longitude = spherical.find("longitude_deg")
+        if latitude is None or longitude is None:
+            raise InvalidCommandError("实验二 world 模板缺少经纬度原点")
+        latitude.text = str(origin[1])
+        longitude.text = str(origin[0])
+        for index in range(count):
+            drone_name = f"uav_{index + 1:02}"
+            model_dir = models_dir / drone_name
+            model_dir.mkdir(parents=True, exist_ok=True)
+            model_root = ET.parse(source_model).getroot()
+            model = model_root.find("model")
+            if model is None:
+                raise InvalidCommandError(f"Iris 模型缺少 <model>：{source_model}")
+            model.set("name", drone_name)
+            fdm_port = self.fdm_base_port + index * 10
+            plugin = next((node for node in model.findall("plugin") if node.get("name") == "ArduPilotPlugin"), None)
+            if plugin is None or plugin.find("fdm_port_in") is None:
+                raise InvalidCommandError("Iris 模型缺少 ArduPilotPlugin/fdm_port_in")
+            plugin.find("fdm_port_in").text = str(fdm_port)
+            ET.ElementTree(model_root).write(model_dir / "model.sdf", encoding="utf-8", xml_declaration=True)
+            (model_dir / "model.config").write_text(
+                f'<model><name>{drone_name}</name><version>1.0</version><sdf version="1.9">model.sdf</sdf></model>\n',
+                encoding="utf-8")
+            east = -7 + index * 14
+            include = ET.SubElement(world, "include")
+            ET.SubElement(include, "uri").text = f"model://{drone_name}"
+            ET.SubElement(include, "name").text = drone_name
+            ET.SubElement(include, "pose").text = f"{east} 0 0.195 0 0 0"
+        self.world_path = session_dir / "world.sdf"
+        world_tree.write(self.world_path, encoding="utf-8", xml_declaration=True)
+        return self.world_path, models_dir
+
+    @staticmethod
+    def _port_available(port: int, tcp: bool) -> bool:
+        family = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
+        with socket.socket(socket.AF_INET, family) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
+
+    def _start_gazebo(self, count: int, origin: list[float]) -> None:
+        self.partition = f"MUVA_EXPERIMENT2_{(self.session_id or uuid.uuid4().hex)[:8]}"
+        world_path, model_path = self._prepare_world(count, origin)
+        ports = [(self.fdm_base_port + index * 10, False) for index in range(count)]
+        ports.extend((self.base_port + index * 20, True) for index in range(count))
+        occupied = [port for port, tcp in ports if not self._port_available(port, tcp)]
+        if occupied:
+            raise CommandRejectedError(f"实验二专用仿真端口 {occupied} 已被占用；未终止其他程序")
+        environment = self._gazebo_environment(model_path)
+        log_path = self.state_dir / "gazebo" / (self.session_id or "unknown") / "gazebo.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("ab")
+        try:
+            self.gazebo = subprocess.Popen(
+                [shutil.which("gz") or "gz", "sim", "-v4", "-r", "--render-engine-gui", "ogre", str(world_path)],
+                cwd=self.workspace, env=environment, stdin=subprocess.DEVNULL,
+                stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+        finally:
+            log_file.close()
+        deadline = time.monotonic() + 60
+        missing = [f"uav_{index + 1:02}" for index in range(count)]
+        while time.monotonic() < deadline:
+            if self.gazebo.poll() is not None:
+                raise CommandRejectedError(f"实验二 Gazebo 已退出；查看 {log_path}")
+            missing = []
+            for index in range(count):
+                name = f"uav_{index + 1:02}"
+                try:
+                    result = subprocess.run(
+                        [shutil.which("gz") or "gz", "model", "-m", name], env=environment,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2, check=False)
+                except subprocess.TimeoutExpired:
+                    result = None
+                if result is None or result.returncode != 0:
+                    missing.append(name)
+            if not missing:
+                return
+            time.sleep(.5)
+        raise CommandTimeoutError(f"等待实验二 Gazebo world 模型加载超时：{missing}；查看 {log_path}")
+
+    def _stop_gazebo(self) -> None:
+        process = self.gazebo
+        self.gazebo = None
+        self.world_path = None
+        self.world_name = None
+        self.partition = None
+        if not process or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        except OSError:
+            pass
+
     def close(self) -> None:
         self._stop.set()
         self._close_vehicles()
+        self._stop_gazebo()
         self._monitor.join(timeout=2)

@@ -36,6 +36,52 @@ def segment_distance(first: list[list[float]], second: list[list[float]]) -> flo
                point_distance(other_start, start, end), point_distance(other_end, start, end))
 
 
+def timed_paths_violate_separation(first: list[list[float]], first_start: float,
+                                   second: list[list[float]], second_start: float,
+                                   clearance: float, speed: float) -> bool:
+    """Check minimum separation while two waypoint routes are concurrently flown."""
+    def segments(path: list[list[float]], start: float):
+        elapsed = start
+        for before, after in zip(path, path[1:]):
+            duration = math.dist(before, after) / speed
+            if duration > 1e-9:
+                yield before, after, elapsed, elapsed + duration
+            elapsed += duration
+
+    def position(segment: tuple[list[float], list[float], float, float], at: float) -> list[float]:
+        before, after, start, end = segment
+        ratio = max(0.0, min(1.0, (at - start) / (end - start)))
+        return [before[axis] + (after[axis] - before[axis]) * ratio for axis in (0, 1)]
+
+    first_segments = list(segments(first, first_start))
+    second_segments = list(segments(second, second_start))
+    first_end = first_segments[-1][3] if first_segments else first_start
+    second_end = second_segments[-1][3] if second_segments else second_start
+    horizon = max(first_end, second_end)
+    if first and horizon > first_end:
+        first_segments.append((first[-1], first[-1], first_end, horizon))
+    if second and horizon > second_end:
+        second_segments.append((second[-1], second[-1], second_end, horizon))
+    for first_segment in first_segments:
+        for second_segment in second_segments:
+            start = max(first_segment[2], second_segment[2])
+            end = min(first_segment[3], second_segment[3])
+            if start > end:
+                continue
+            first_at_start = position(first_segment, start)
+            second_at_start = position(second_segment, start)
+            first_at_end = position(first_segment, end)
+            second_at_end = position(second_segment, end)
+            relative_start = [first_at_start[axis] - second_at_start[axis] for axis in (0, 1)]
+            relative_velocity = [(first_at_end[axis] - second_at_end[axis]) - relative_start[axis] for axis in (0, 1)]
+            velocity_squared = sum(value * value for value in relative_velocity)
+            ratio = max(0.0, min(1.0, -sum(relative_start[axis] * relative_velocity[axis] for axis in (0, 1)) / velocity_squared)) if velocity_squared else 0.0
+            closest = [relative_start[axis] + ratio * relative_velocity[axis] for axis in (0, 1)]
+            if math.hypot(*closest) < clearance:
+                return True
+    return False
+
+
 def shortest_route(first: list[float], second: list[float], boxes: list[list[float]]) -> list[list[float]]:
     valid = lambda point: all(abs(value) <= 500 for value in point) and not any(hits_box(point, point, box) for box in boxes)
     if not valid(first) or not valid(second):

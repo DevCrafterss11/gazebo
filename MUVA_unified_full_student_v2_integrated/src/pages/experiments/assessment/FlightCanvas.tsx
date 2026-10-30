@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react';
+import { Component, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -7,6 +7,28 @@ import { getExperiment3Scene } from '../../../domain/assessment/experiment3Scene
 import { IrisDroneModel } from './IrisDroneModel';
 import sceneStyles from './Experiment3Scenes.module.css';
 type View = 'free' | 'top' | 'side' | 'follow';
+interface WebGLBoundaryProps { children: ReactNode }
+interface WebGLBoundaryState { failed: boolean }
+
+class WebGLBoundary extends Component<WebGLBoundaryProps, WebGLBoundaryState> {
+  state: WebGLBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): WebGLBoundaryState {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <div className={sceneStyles.webglFallback} role="alert">
+        <strong>3D 模型暂不可用</strong>
+        <span>浏览器无法创建 WebGL 渲染环境。可继续使用下方部件列表和实验内容。</span>
+        <button type="button" onClick={() => this.setState({ failed: false })}>重试 3D 视图</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
 interface FlightCanvasProps {
   flight?: SimulationSnapshot;
   scene?: string | null;
@@ -55,6 +77,7 @@ export function FlightCanvas({ flight, scene, cognition = false, selectedPart, o
   const selectedScene = cognition ? undefined : getExperiment3Scene(scene);
   return <div className={sceneStyles.viewport} data-scene-id={selectedScene?.id}>
     {selectedScene && <><img className={sceneStyles.map} src={selectedScene.mapImage} alt={`${selectedScene.name}卫星地图`}/><div className={sceneStyles.mapShade}/></>}
+    <WebGLBoundary>
     <Canvas shadows gl={{ alpha: true }} aria-label="可旋转、缩放的 3D Iris 四旋翼" camera={{ position: cognition ? [5, 3.3, 5.5] : [7, 6, 10], fov: cognition ? 43 : 48 }} style={{ height: '100%', width: '100%' }}>
     {cognition && <color attach="background" args={['#061a33']}/>}
     <ambientLight intensity={1.7}/><directionalLight position={[9, 18, 8]} intensity={2.5} castShadow/><pointLight position={[-4, 4, -2]} intensity={2} color="#18b9ef"/>
@@ -70,6 +93,7 @@ export function FlightCanvas({ flight, scene, cognition = false, selectedPart, o
     <OrbitControls makeDefault enableDamping minDistance={cognition ? 8 : 5} maxDistance={cognition ? 40 : 160} maxPolarAngle={cognition ? Math.PI * 0.8 : Math.PI / 2.05}/>
     <Camera view={view} flight={flight} cognition={cognition} focusPart={focusPart} selectedPart={selectedPart}/>
     </Canvas>
+    </WebGLBoundary>
     {selectedScene && <span className={sceneStyles.credit}>Sentinel-2 © EOX / Copernicus 2016 · CC BY 4.0</span>}
   </div>;
 }

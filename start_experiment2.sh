@@ -15,10 +15,16 @@ if [[ ! -x "${MUVA_SWARM_SITL_BINARY:-${project_dir}/ardupilot/build/sitl/bin/ar
     echo "未找到 ArduCopter SITL；先执行：cd ${project_dir}/ardupilot && ./waf configure --board sitl && ./waf copter" >&2
     exit 1
 fi
+if [[ ! -f "${MUVA_ARDUPILOT_GAZEBO_DIR:-${project_dir}/ardupilot_gazebo}/build/libArduPilotPlugin.so" \
+    || ! -f "${MUVA_ARDUPILOT_GAZEBO_DIR:-${project_dir}/ardupilot_gazebo}/worlds/experiment2_swarm.sdf" ]] \
+    || ! command -v gz >/dev/null 2>&1; then
+    echo "未找到实验二 Gazebo world、ArduPilot 插件或 gz 命令；请先构建 ardupilot_gazebo" >&2
+    exit 1
+fi
 python3 -c 'import fastapi, pymavlink, uvicorn' || { echo "请先安装 mavlink-gateway/requirements.txt（或运行 mavlink-gateway/dev.sh 完成依赖安装）" >&2; exit 1; }
 health="$(curl -fsS --max-time 2 "http://127.0.0.1:${gateway_port}/api/swarm/health" 2>/dev/null || true)"
 if [[ -n "${health}" ]]; then
-    if ! printf '%s' "${health}" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("experiment") == 2 and data.get("mode") == "sitl" and data.get("gazebo") is False and data.get("ekfPreflight") is True' >/dev/null 2>&1; then
+    if ! printf '%s' "${health}" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("experiment") == 2 and data.get("mode") == "sitl-gazebo" and data.get("gazeboWorldAvailable") is True and data.get("ekfPreflight") is True' >/dev/null 2>&1; then
         echo "端口 ${gateway_port} 上不是当前版本的实验二 SITL 服务；确认机群落地后停止旧服务，再启动实验二（不会接管现有后端）" >&2
         exit 1
     fi
@@ -49,6 +55,6 @@ for attempt in $(seq 1 30); do
 done
 experiment_url="http://127.0.0.1:${frontend_port}/experiments/swarm"
 echo "实验二就绪：${experiment_url}"
-echo "未启动 Gazebo/MAVProxy；点击初始化机群才创建2–6架原生四旋翼 SITL。建议先使用2架。"
+echo "点击初始化机群后将启动实验二独立 Gazebo world 与2–6架 Gazebo-backed ArduCopter SITL。建议先使用2架。"
 echo "实验一端口、飞控和进度不变；停止实验二：${project_dir}/stop_experiment2.sh"
 if [[ "${MUVA_OPEN_BROWSER:-1}" == 1 ]]; then xdg-open "${experiment_url}" >/dev/null 2>&1 || true; fi

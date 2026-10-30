@@ -18,6 +18,7 @@ export interface SwarmService {
   returnDroneToHome(droneId: string): void | Promise<void>;
   stop(): void;
   shutdown(sessionId?: string): void | Promise<void>;
+  abortSimulation?(sessionId?: string): void | Promise<void>;
   subscribeTelemetry(listener: (snapshot: SwarmSnapshot) => void): () => void;
   dispose(): void;
 }

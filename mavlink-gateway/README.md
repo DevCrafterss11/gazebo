@@ -2,7 +2,9 @@
 
 将 ArduPilot MAVLink 转换为前端可用的 HTTP 命令接口和 WebSocket 遥测流。
 
-实验二使用单独的 `muva_gateway.swarm_app`：在仓库根目录运行 `./start_experiment2.sh`，前端只给实验二选用 `ApiSwarmService`；独立网关监听 `127.0.0.1:8002`，以 TCP 分别连接 2–6 架原生 ArduCopter `quad` SITL（默认端口 15760、15780 等），不启动 Gazebo，也不占用实验一飞控、网关或浏览器进度。后端逐机校验 GPS/EKF、上传并回读完整 MAVLink 任务，以 GUIDED 指令调度并行覆盖及逐机返航，通过 `/ws/swarm` 回传真实飞控位置。初始化成功后，若图形桌面已安装 `xterm`，自动打开每架无人机专属的**只读指令流水**，窗口固定使用 UTF-8 与 `Noto Sans Mono CJK SC` 中文等宽字体：网关实际控制通道发起的模式、解锁、起飞、任务上传和位置目标（TX），飞控原始 `COMMAND_ACK`、`MISSION_ACK`、`STATUSTEXT`（RX），以及心跳、遥测和任务回读确认后的完成记录（DONE）；顶部显示实时模式、高度、位置、电量和进度。ACK 只代表飞控接收，不冒充动作完成。各机独立写入 `uav-N/commands.jsonl` 和 `uav-N/flight-state.json`，无需再从另一个 MAVLink 端口旁路猜测控制指令。关闭窗口不影响任务，重新开始实验会先确认飞控在线、上锁且已降落，再通过会话安全关闭旧机群；失败则保留旧进度，不会强行结束飞控。窗口启动日志写入 `uav-N/monitor.log`，原始飞控日志在 `uav-N/sitl.log`；设置 `MUVA_SWARM_MONITOR_TERMINALS=0` 可关闭弹窗。服务重启后会话不会跨进程恢复。`./stop_experiment2.sh` 会拒绝在飞行中关闭飞控。
+实验二使用单独的 `muva_gateway.swarm_app`：在仓库根目录运行 `./start_experiment2.sh`；独立网关监听 `127.0.0.1:8002`，前端其他实验保持 Mock。点击初始化时，运行时从 `ardupilot_gazebo/worlds/experiment2_swarm.sdf` 生成独立 world 和每机独立的 Iris 模型副本，设置用户场景原点、地面初始位置与不同插件端口，再启动专用 `GZ_PARTITION` 的 Gazebo Sim 8，并启动对应的 ArduCopter JSON SITL。Gazebo FDM UDP 端口为 `9202 + 10*i`（`i=0..5`），与实验一的 `9002` 分开；SITL MAVLink TCP 端口默认 `15760 + 20*i`。后端确认每个 Gazebo 模型存在，并逐机等待心跳、GPS、EKF 后才返回初始化成功。随后后端逐机上传并回读任务，以 GUIDED 指令调度覆盖和返航，经 `/ws/swarm` 回传 Gazebo-backed 飞控遥测。任一初始化环节失败仅清理本次实验二创建的进程；不会操作实验一的 world、SITL、网关或进度。
+
+初始化成功后，若图形桌面已安装 `xterm`，会按机数打开独立的**只读指令流水**，窗口固定使用 UTF-8 与 `Noto Sans Mono CJK SC` 中文等宽字体；显示实际命令 TX、飞控 ACK/状态 RX，以及经状态确认后的 DONE。各机独立写入 `uav-N/commands.jsonl`、`uav-N/flight-state.json` 和 `uav-N/sitl.log`；Gazebo 日志与本次生成的 world/model 存在 `~/.local/state/muva/experiment2/gazebo/`。设置 `MUVA_SWARM_MONITOR_TERMINALS=0` 可关闭弹窗。`./stop_experiment2.sh` 会先请求后端安全关闭，飞行中或无法确认落地时拒绝停止。
 
 需要**实际飞行验证双机完整链路**时，在 `mavlink-gateway` 目录运行：
 
@@ -10,7 +12,7 @@
 MUVA_RUN_SWARM_SITL_E2E=1 PYTHONPATH=.packages:. python3 tests/swarm_sitl_e2e.py
 ```
 
-测试使用临时状态目录、独立端口 16960/16980，不连接已有实验；飞行中请勿强制终止脚本。低配机器建议关闭实验一 Gazebo 后再运行；测试脚本不会自动关闭实验一。
+测试使用临时状态目录、独立 MAVLink 端口 16960/16980、独立 Gazebo 分区及独立 FDM 端口，不连接已有实验；它会运行双机任务并自动返航落地，飞行中请勿强制终止脚本。测试脚本不会关闭实验一 Gazebo。
 
 ## 运行
 

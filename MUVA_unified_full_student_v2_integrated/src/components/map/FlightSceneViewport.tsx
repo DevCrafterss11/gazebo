@@ -1,18 +1,19 @@
 import { AlertTriangle, ChevronUp, Crosshair, Drone, Home, LoaderCircle, LocateFixed, MapPin, Minus, Navigation, Play, Plus, Rotate3d, Route as RouteIcon, Trash2, Undo2, X } from 'lucide-react';
 import { AttributionControl, type GeoJSONSource, LngLatBounds, Map as MapLibreMap, type MapMouseEvent, Marker } from 'maplibre-gl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import type { RouteDraftWaypoint, RoutePlannerPhase } from '../../types/mission';
 import type { FlightPathPoint } from '../../types/telemetry';
 import type { FlightMapView, MapCoordinates } from '../../types/flightMap';
-import { homeDistanceMeters, initialFlightMapView, offscreenVehicleIndicator } from '../../domain/flightMap';
+import { homeDistanceMeters, initialFlightMapView, offscreenVehicleIndicator, segmentFlightMapTrack } from '../../domain/flightMap';
 import { geographicBasemapSourceId, geographicMapStyle } from '../../domain/geographicMap';
 import styles from './FlightSceneViewport.module.css';
 
 export interface RoutePlannerMapState {
   visible: boolean;
+  showToolbar?: boolean;
   editable: boolean;
   phase: RoutePlannerPhase;
   waypoints: RouteDraftWaypoint[];
@@ -33,6 +34,9 @@ export interface FlightSceneMapContext {
   sceneName: string;
   coordinateMode?: 'geographic' | 'scene-relative';
   configuredHome: MapCoordinates;
+  /** Geographic center selected in step 3; used for the initial satellite view. */
+  sceneCenter?: MapCoordinates;
+  initialZoom?: number;
   actualHome: MapCoordinates | null;
   telemetryReady: boolean;
   savedView: FlightMapView | null;
@@ -55,6 +59,8 @@ interface FlightSceneViewportProps {
   flightPath: FlightPathPoint[];
   mode: string;
   routePlanner?: RoutePlannerMapState;
+  tamperedWaypoints?: RouteDraftWaypoint[] | null;
+  routeExecuteLabel?: string;
   sceneContext?: FlightSceneMapContext;
 }
 
@@ -78,21 +84,17 @@ const isValidCoordinate = (latitude: number, longitude: number): boolean => Numb
   && longitude <= 180
   && (Math.abs(latitude) > 1e-6 || Math.abs(longitude) > 1e-6);
 
-const compactPath = (points: FlightPathPoint[]): FlightPathPoint[] => {
-  const compacted: FlightPathPoint[] = [];
-  points.slice(-600).forEach((point) => {
-    if (!isValidCoordinate(point.latitude, point.longitude)) return;
-    const previous = compacted.at(-1);
-    if (!previous || Math.hypot(point.north - previous.north, point.east - previous.east) >= 0.08) {
-      compacted.push(point);
-    }
-  });
-  return compacted;
-};
-
 const lineGeoJson = (coordinates: [number, number][]): GeoJSON.GeoJSON => coordinates.length < 2
   ? { type: 'FeatureCollection', features: [] }
   : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } };
+
+const trackGeoJsonForSegments = (segments: FlightPathPoint[][]): GeoJSON.GeoJSON => {
+  const coordinates = segments.filter((segment) => segment.length >= 2)
+    .map((segment) => segment.map((point) => [point.longitude, point.latitude] as [number, number]));
+  return coordinates.length === 0
+    ? { type: 'FeatureCollection', features: [] }
+    : { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates } };
+};
 
 const createVehicleMarkerElement = (): HTMLDivElement => {
   const element = document.createElement('div');
@@ -134,6 +136,8 @@ export function FlightSceneViewport({
   flightPath,
   mode,
   routePlanner,
+  tamperedWaypoints,
+  routeExecuteLabel,
   sceneContext,
 }: FlightSceneViewportProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -172,10 +176,9 @@ export function FlightSceneViewport({
       : homeMismatch > 5 ? sceneRelative
         ? `场景 HOME 与飞控 HOME 相距 ${homeMismatch.toFixed(1)} m。地图以所选 HOME 为原点显示真实相对位移；原始遥测和飞控 HOME 未修改。`
         : `配置 HOME 与飞控 HOME 相距 ${homeMismatch.toFixed(1)} m；无人机与轨迹使用真实坐标。` : null);
-  const track = useMemo(() => compactPath(flightPath), [flightPath]);
-  const trackGeoJson = useMemo(() => lineGeoJson(
-    track.map((point) => [point.longitude, point.latitude] as [number, number]),
-  ), [track]);
+  const trackSegments = useMemo(() => segmentFlightMapTrack(flightPath), [flightPath]);
+  const track = useMemo(() => trackSegments.filter((segment) => segment.length >= 2).flat(), [trackSegments]);
+  const trackGeoJson = useMemo(() => trackGeoJsonForSegments(trackSegments), [trackSegments]);
   const plannedRouteGeoJson = useMemo(() => {
     if (!routePlanner?.waypoints.length || routePlanner.phase === 'COMPLETED' || routePlanner.phase === 'IDLE') return lineGeoJson([]);
     return lineGeoJson([
@@ -184,6 +187,9 @@ export function FlightSceneViewport({
       homeCoordinates,
     ]);
   }, [homeCoordinates[0], homeCoordinates[1], routePlanner?.phase, routePlanner?.waypoints]);
+  const tamperedRouteGeoJson = useMemo(() => tamperedWaypoints?.length
+    ? lineGeoJson([homeCoordinates, ...tamperedWaypoints.map((point) => [point.longitude, point.latitude] as [number, number]), homeCoordinates])
+    : lineGeoJson([]), [homeCoordinates[0], homeCoordinates[1], tamperedWaypoints]);
   const plannedRoutePoints = useMemo<MapPoint[]>(() => {
     if (!routePlanner?.waypoints.length || routePlanner.phase === 'COMPLETED' || routePlanner.phase === 'IDLE') return [];
     const longitudeScale = 111_111 * Math.cos((home.latitude * Math.PI) / 180);
@@ -208,15 +214,15 @@ export function FlightSceneViewport({
     }).join(' ');
   }, [homeCoordinates[0], homeCoordinates[1], mapReady, mapViewRevision, routePlanner?.phase, routePlanner?.waypoints]);
   const trackScreenPath = useMemo(() => {
-    if (!mapReady || !mapRef.current || track.length < 2) return null;
+    if (!mapReady || !mapRef.current || !trackSegments.some((segment) => segment.length >= 2)) return null;
     const width = mapContainerRef.current?.clientWidth ?? 0;
     const height = mapContainerRef.current?.clientHeight ?? 0;
     if (width <= 0 || height <= 0) return null;
-    return track.map((point) => {
+    return trackSegments.filter((segment) => segment.length >= 2).map((segment) => segment.map((point) => {
       const projected = mapRef.current!.project([point.longitude, point.latitude]);
       return `${((projected.x / width) * 100).toFixed(2)},${((projected.y / height) * 100).toFixed(2)}`;
-    }).join(' ');
-  }, [mapReady, mapViewRevision, track]);
+    }).join(' '));
+  }, [mapReady, mapViewRevision, trackSegments]);
 
   const mapExtent = Math.max(
     10,
@@ -232,10 +238,10 @@ export function FlightSceneViewport({
     y: clampMapCoordinate(50 - (point.north / mapExtent) * 42),
   });
   const fallbackMarker = projectFallback({ north, east });
-  const fallbackPath = track.map((point) => {
+  const fallbackPaths = trackSegments.filter((segment) => segment.length >= 2).map((segment) => segment.map((point) => {
     const projected = projectFallback(point);
     return `${projected.x.toFixed(2)},${projected.y.toFixed(2)}`;
-  }).join(' ');
+  }).join(' '));
   const plannedFallbackPath = plannedRoutePoints.length > 0
     ? [{ north: 0, east: 0 }, ...plannedRoutePoints, { north: 0, east: 0 }]
       .map((point) => {
@@ -259,7 +265,9 @@ export function FlightSceneViewport({
     let resizeObserver: ResizeObserver | null = null;
     const mountedContext = sceneContext;
     const initialView = mountedContext ? initialFlightMapView(mountedContext.contextId, mountedContext.configuredHome,
-      lastMapViewRef.current?.contextId === mountedContext.contextId ? lastMapViewRef.current : mountedContext.savedView) : null;
+      lastMapViewRef.current?.contextId === mountedContext.contextId ? lastMapViewRef.current : mountedContext.savedView,
+      mountedContext.sceneCenter ?? mountedContext.configuredHome,
+      mountedContext.initialZoom ?? 17.2) : null;
     const recordView = () => {
       if (!map || !mountedContext) return;
       const center = map.getCenter().wrap();
@@ -289,6 +297,7 @@ export function FlightSceneViewport({
       });
       map.on('load', () => {
         if (disposed) return;
+        activeMap.addSource('tampered-route', { type: 'geojson', data: tamperedRouteGeoJson });
         activeMap.addSource('planned-route', { type: 'geojson', data: plannedRouteGeoJson });
         activeMap.addLayer({
           id: 'planned-route-shadow',
@@ -303,6 +312,9 @@ export function FlightSceneViewport({
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: { 'line-color': '#ffe066', 'line-width': 7, 'line-opacity': 1, 'line-blur': 0 },
         });
+        activeMap.addLayer({ id: 'tampered-route-line', type: 'line', source: 'tampered-route',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#ef5a5a', 'line-width': 5, 'line-dasharray': [1.5, 1.2], 'line-opacity': 0.95 } });
         activeMap.addSource('flight-track', { type: 'geojson', data: trackGeoJson, lineMetrics: true });
         activeMap.addLayer({
           id: 'flight-track-shadow',
@@ -413,6 +425,11 @@ export function FlightSceneViewport({
   }, [mapReady, plannedRouteGeoJson]);
 
   useEffect(() => {
+    const source = mapRef.current?.getSource('tampered-route') as GeoJSONSource | undefined;
+    source?.setData(tamperedRouteGeoJson);
+  }, [mapReady, tamperedRouteGeoJson]);
+
+  useEffect(() => {
     waypointMarkerRefs.current.forEach((marker) => marker.remove());
     waypointMarkerRefs.current = [];
     if (!mapRef.current || !routePlanner?.waypoints.length || routePlanner.phase === 'COMPLETED' || routePlanner.phase === 'IDLE') return;
@@ -481,13 +498,28 @@ export function FlightSceneViewport({
     );
     map.fitBounds(bounds, {
       padding: { top: 82, right: 72, bottom: 70, left: 72 },
-      maxZoom: 18.5,
+      maxZoom: 19.2,
       duration: 700,
     });
   };
 
+  const handleFallbackMapClick = (event: MouseEvent<HTMLDivElement>) => {
+    const planner = routePlannerRef.current;
+    if (!planner?.visible || !planner.editable) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const x = ((event.clientX - bounds.left) / bounds.width) * 100;
+    const y = ((event.clientY - bounds.top) / bounds.height) * 100;
+    const eastMeters = ((x - 50) / 42) * mapExtent;
+    const northMeters = ((50 - y) / 42) * mapExtent;
+    const latitude = home.latitude + northMeters / 111_111;
+    const longitudeScale = 111_111 * Math.cos((home.latitude * Math.PI) / 180);
+    if (Math.abs(longitudeScale) < 1) return;
+    planner.onAddWaypoint(latitude, home.longitude + eastMeters / longitudeScale);
+  };
+
   useEffect(() => {
-    if (sceneContext || !mapReady || track.length < 2 || hasAutoFittedTrackRef.current) return;
+    if (!mapReady || track.length < 2 || hasAutoFittedTrackRef.current) return;
     const first = track[0];
     if (!first) return;
     const hasMovement = track.some((point) => point.latitude !== first.latitude || point.longitude !== first.longitude);
@@ -497,19 +529,19 @@ export function FlightSceneViewport({
   }, [mapReady, track]);
 
   return (
-    <div className={styles.viewport} aria-label="无人机实时地图与飞行轨迹" data-coordinate-mode={sceneContext?.coordinateMode ?? 'geographic'} data-scene-id={sceneContext?.contextId} data-basemap-status={mapFailed ? 'error' : basemapReady ? 'ready' : 'loading'}>
+    <div className={styles.viewport} aria-label="无人机实时地图与飞行轨迹" data-coordinate-mode={sceneContext?.coordinateMode ?? 'geographic'} data-scene-id={sceneContext?.contextId} data-basemap-status={mapFailed ? 'error' : basemapReady ? 'ready' : 'loading'} data-route-editable={routePlanner?.visible && routePlanner.editable ? 'true' : 'false'}>
       <div className={styles.mapCanvas} ref={mapContainerRef} hidden={mapFailed} />
       {mapFailed ? (
-        <div className={styles.mapLayer} aria-label="离线飞行坐标视图">
+        <div className={styles.mapLayer} aria-label="离线飞行坐标视图" data-route-editable={routePlanner?.visible && routePlanner.editable} onClick={handleFallbackMapClick}>
           <span className={styles.cardinalNorth}>N</span>
           <span className={styles.cardinalEast}>E</span>
           <span className={styles.cardinalSouth}>S</span>
           <span className={styles.cardinalWest}>W</span>
           <span className={styles.homePoint} style={{ left: '50%', top: '50%' }}><Home size={13} /></span>
-          {fallbackPath ? (
+          {fallbackPaths.length > 0 ? (
             <svg className={styles.flightPath} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <polyline className={styles.flightPathShadow} points={fallbackPath} />
-              <polyline points={fallbackPath} />
+              {fallbackPaths.map((path, index) => <polyline key={index} className={styles.flightPathShadow} points={path} />)}
+              {fallbackPaths.map((path, index) => <polyline key={index} points={path} />)}
             </svg>
           ) : null}
           {plannedFallbackPath ? (
@@ -540,9 +572,9 @@ export function FlightSceneViewport({
       ) : null}
       {!mapFailed && trackScreenPath ? (
         <svg className={styles.flightTrackOverlay} viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="无人机实际飞行轨迹">
-          <polyline className={styles.flightTrackOverlayShadow} points={trackScreenPath} />
-          <polyline className={styles.flightTrackOverlayGlow} points={trackScreenPath} />
-          <polyline points={trackScreenPath} />
+          {trackScreenPath.map((path, index) => <polyline key={index} className={styles.flightTrackOverlayShadow} points={path} />)}
+          {trackScreenPath.map((path, index) => <polyline key={index} className={styles.flightTrackOverlayGlow} points={path} />)}
+          {trackScreenPath.map((path, index) => <polyline key={index} points={path} />)}
         </svg>
       ) : null}
       {offscreenVehicle ? <button
@@ -573,7 +605,7 @@ export function FlightSceneViewport({
           <button type="button" title="缩小地图" aria-label="缩小地图" onClick={() => mapRef.current?.zoomOut()}><Minus size={16} /></button>
         </div>
       ) : null}
-      {routePlanner?.visible && !mapFailed ? (
+      {routePlanner?.visible && routePlanner.showToolbar !== false && !mapFailed ? (
         <div className={styles.routePlannerToolbar}>
           <div className={styles.routePlannerIdentity}>
             <RouteIcon size={17} />
@@ -603,7 +635,7 @@ export function FlightSceneViewport({
               onClick={routePlanner.onExecute}
             >
               {busyRoutePhases.includes(routePlanner.phase) ? <LoaderCircle className={styles.routeSpinner} size={15} /> : <Play size={15} />}
-              <span>{routePlanner.phase === 'RUNNING' ? '执行中' : '执行航线'}</span>
+              <span>{routePlanner.phase === 'RUNNING' ? '执行中' : routeExecuteLabel ?? '执行航线'}</span>
             </button>
           </div>
           {routePlanner.error ? <div className={styles.routePlannerError} role="alert">{routePlanner.error}</div> : null}

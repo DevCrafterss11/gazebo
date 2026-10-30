@@ -55,14 +55,26 @@ export function IrisDroneModel({ flight, cognition = false, selectedPart, onPart
     else if (demonstrationPlaying) phase.current += delta;
     const pulse = demonstration ? Math.sin(phase.current * 1.15) : 0;
     if (body.current && cognition) body.current.position.y = 1.5 + (demonstration === 'throttle' ? 0.25 * pulse : 0);
+    // Keep the teaching model alive even before a motion demonstration is selected.
+    // The outer group carries the display rotation so it does not overwrite the
+    // actual roll/pitch/yaw attitude on the inner group.
+    if (body.current) {
+      body.current.rotation.y = cognition ? body.current.rotation.y + delta * 0.34 : 0;
+    }
     if (attitude.current) {
       const [pitch, yaw, roll] = toThreeEuler(flight?.attitude ?? { pitch: 0, yaw: 0, roll: 0 });
       attitude.current.rotation.set(cognition && demonstration === 'pitch' ? 0.24 * pulse : pitch,
         cognition && demonstration === 'yaw' ? -0.5 * pulse : yaw,
         cognition && demonstration === 'roll' ? -0.3 * pulse : roll);
     }
+    const idleRotorSpeed = cognition && (!demonstration || demonstrationPlaying) ? 7.5 : 0;
     rotors.current.forEach((rotor, index) => {
-      if (rotor) rotor.rotation.y += delta * (index % 2 ? 1 : -1) * (cognition ? demonstration && demonstrationPlaying ? 34 + (demonstration === 'throttle' ? 28 : index % 2 ? 12 : 0) : 0 : flight?.armed ? flight.airborne ? 55 : 20 : 0);
+      if (!rotor) return;
+      const demonstrationSpeed = demonstration && demonstrationPlaying
+        ? 34 + (demonstration === 'throttle' ? 28 : index % 2 ? 12 : 0)
+        : idleRotorSpeed;
+      const flightSpeed = flight?.armed ? flight.airborne ? 55 : 20 : 0;
+      rotor.rotation.y += delta * (index % 2 ? 1 : -1) * (cognition ? demonstrationSpeed : flightSpeed);
     });
   });
 

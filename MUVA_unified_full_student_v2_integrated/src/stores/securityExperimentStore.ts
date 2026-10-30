@@ -11,6 +11,8 @@ interface SecurityState {
   unsubscribe: (() => void) | null;
   history: SecurityReport[];
   error: string | null;
+  executeSimulationMotorStop: () => Promise<void>;
+  executeWaypointTampering: (input: { waypoints: { latitude: number; longitude: number }[]; offsetSide: 'left' | 'right' }) => Promise<void>;
   create: (config: SecurityConfig) => Promise<void>;
   restore: () => Promise<void>;
   baseline: () => Promise<void>;
@@ -57,6 +59,20 @@ export const useSecurityExperimentStore = create<SecurityState>((set, get) => {
   };
   return {
     run: null, report: null, reflection: '', busy: false, unsubscribe: null, history: [], error: null,
+    executeSimulationMotorStop: async () => {
+      if (get().busy) return;
+      set({ busy: true, error: null });
+      try { await services.security.executeSimulationMotorStop(); }
+      catch (error: unknown) { const message = error instanceof Error ? error.message : '攻击执行失败'; set({ error: message }); throw error; }
+      finally { set({ busy: false }); }
+    },
+    executeWaypointTampering: async (input) => {
+      if (get().busy) throw new Error('另一个安全实验操作正在执行');
+      set({ busy: true, error: null });
+      try { await services.security.executeWaypointTampering(input); }
+      catch (error: unknown) { const message = error instanceof Error ? error.message : '航点篡改执行失败'; set({ error: message }); throw error; }
+      finally { set({ busy: false }); }
+    },
     create: async (config) => {
       if (get().busy || get().run) return;
       set({ busy: true, error: null, report: null });

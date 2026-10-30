@@ -25,18 +25,11 @@ if [[ -d "${local_physics_plugins}" ]]; then
     export GZ_SIM_PHYSICS_ENGINE_PATH="${local_physics_plugins}${GZ_SIM_PHYSICS_ENGINE_PATH:+:${GZ_SIM_PHYSICS_ENGINE_PATH}}"
 fi
 
-# Prefer the matching Gazebo Sim 8 command wrapper and point it at the
-# project-local Ruby command module/configuration restored by setup scripts.
-if [[ -x "${local_gz_root}/bin/gz" ]]; then
-    export PATH="${local_gz_root}/bin${PATH:+:${PATH}}"
-    export GZ_CONFIG_PATH="${local_gz_root}/share/gz${GZ_CONFIG_PATH:+:${GZ_CONFIG_PATH}}"
-    export RUBYLIB="${local_gz_root}/lib/ruby${RUBYLIB:+:${RUBYLIB}}"
-fi
-
 export GZ_SIM_SYSTEM_PLUGIN_PATH="${plugin_dir}/build${GZ_SIM_SYSTEM_PLUGIN_PATH:+:${GZ_SIM_SYSTEM_PLUGIN_PATH}}"
 export GZ_SIM_RESOURCE_PATH="${plugin_dir}/models:${plugin_dir}/worlds${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
 # VMware SVGA flickers with Gazebo's accelerated Ogre2 rendering.
 export LIBGL_ALWAYS_SOFTWARE=1
 
+gz_bin="$(command -v gz)"
 cd "${plugin_dir}"
-exec gz sim -v4 -r --render-engine-gui ogre iris_runway.sdf "$@"
+exec "${gz_bin}" sim -v4 -r --render-engine-gui ogre "${plugin_dir}/worlds/iris_runway.sdf" "$@"

@@ -478,6 +478,11 @@
   box-shadow: inset 0 0 28px rgb(2 16 28 / 24%);
 }
 
+.mapLayer[data-route-editable="true"] { cursor: crosshair; }
+.mapLayer[data-route-editable="true"] > * { pointer-events: none; }
+
+.viewport[data-route-editable="true"] :global(.maplibregl-marker) { pointer-events: none; }
+
 .mapLayer::before,
 .mapLayer::after {
   position: absolute;

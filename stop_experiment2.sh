@@ -5,11 +5,11 @@ state_dir="${MUVA_SWARM_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/muva/
 gateway_port="${MUVA_SWARM_GATEWAY_PORT:-8002}"
 health="$(curl -fsS --max-time 2 "http://127.0.0.1:${gateway_port}/api/swarm/health" || true)"
 if [[ -n "${health}" ]]; then
-    session_id="$(printf '%s' "${health}" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("experiment") == 2 and data.get("mode") == "sitl" and data.get("gazebo") is False, "端口上不是实验二后端"; print(data.get("sessionId") or "")')"
+    session_id="$(printf '%s' "${health}" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data.get("experiment") == 2 and data.get("mode") == "sitl-gazebo" and data.get("gazeboWorldAvailable") is True, "端口上不是实验二 Gazebo SITL 后端"; print(data.get("sessionId") or "")')"
     if [[ -n "${session_id}" ]]; then
         if ! curl -fsS --max-time 20 -X POST "http://127.0.0.1:${gateway_port}/api/swarm/shutdown" -H 'Content-Type: application/json' \
             -d "{\"sessionId\":\"${session_id}\",\"action\":\"shutdown\"}"; then
-            echo "机群可能仍在飞行或调度中，拒绝停止。请先在实验二页面返航并确认全部降落。" >&2
+            echo "机群/Gazebo 可能仍在飞行或调度中，拒绝停止。请先在实验二页面返航并确认全部降落。" >&2
             exit 1
         fi
     fi

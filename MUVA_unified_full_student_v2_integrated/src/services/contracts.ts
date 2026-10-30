@@ -129,7 +129,28 @@ export interface TelemetryService {
 }
 
 export type SecurityTelemetryHandler = (sample: SecurityTelemetry) => void;
+export interface SecurityRangeSnapshot {
+  active: boolean;
+  runtime: Record<string, string>;
+  vehicle: {
+    connection: { connected: boolean; transportConnected: boolean; lastHeartbeatAgeMs: number | null };
+    vehicle: { armed: boolean; mode: string };
+    telemetry: { latitude: number; longitude: number; altitude: number; groundSpeed: number; battery: number; yaw: number };
+    home: { valid: boolean; latitude: number; longitude: number; altitude?: number };
+    track: { latitude: number; longitude: number; altitude: number; timestamp?: number }[];
+  };
+}
 export interface SecurityExperimentService {
+  getRangeStatus(): Promise<SecurityRangeSnapshot>;
+  startRange(): Promise<SecurityRangeSnapshot>;
+  stopRange(): Promise<{ ok: boolean }>;
+  takeoffRange(altitude: number): Promise<unknown>;
+  moveRange(direction: 'forward' | 'backward' | 'left' | 'right', meters: number): Promise<unknown>;
+  landRange(): Promise<unknown>;
+  executeSimulationMotorStop(): Promise<{ accepted: boolean; effect: 'motors_stopped' }>;
+  executeWaypointTampering(input: { waypoints: { latitude: number; longitude: number }[]; offsetSide: 'left' | 'right' }): Promise<{ accepted: boolean; effect: 'mission_replaced_and_started'; tamperedIndex: number; offsetMeters: number }>;
+  executeRangeMission(waypoints: { latitude: number; longitude: number }[]): Promise<{ accepted: boolean; effect: 'original_mission_started' }>;
+  injectRangeWaypoint(input: { latitude: number; longitude: number; altitude: number }): Promise<{ accepted: boolean; effect: 'guided_waypoint_injected' }>;
   createRun(config: SecurityConfig): Promise<SecurityRun>;
   getRun(runId: string): Promise<SecurityRun | null>;
   listReports(): Promise<SecurityReport[]>;

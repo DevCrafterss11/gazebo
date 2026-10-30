@@ -1,11 +1,12 @@
 .surface {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(250px, 1.35fr) minmax(190px, 0.92fr) minmax(210px, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.92fr) minmax(0, 1fr);
+  gap: clamp(4px, 1cqi, 12px);
   height: 100%;
   min-height: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
+  padding: clamp(3px, 0.5cqh, 8px) clamp(4px, 0.8cqi, 12px) clamp(4px, 0.8cqh, 12px);
+  container-type: size;
 }
 
 .directionGroup,
@@ -14,7 +15,7 @@
   position: relative;
   min-width: 0;
   min-height: 0;
-  padding: 22px var(--space-2) var(--space-2);
+  padding: clamp(15px, 17cqh, 22px) clamp(4px, 0.7cqi, 8px) clamp(3px, 0.7cqh, 8px);
   border: 1px solid rgb(22 83 123 / 52%);
   border-radius: var(--radius-sm);
   background: linear-gradient(180deg, rgb(7 40 71 / 68%), rgb(3 23 43 / 58%));
@@ -25,13 +26,13 @@
   top: 5px;
   left: 9px;
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: clamp(8px, 1.4cqh, 10px);
 }
 
 .directionPad {
   display: grid;
   grid-template: repeat(3, 1fr) / repeat(3, 1fr);
-  gap: var(--space-1);
+  gap: clamp(2px, 0.5cqi, 5px);
   height: 100%;
 }
 
@@ -40,18 +41,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: clamp(2px, 0.5cqi, 5px);
   min-height: 0;
   border: 1px solid #185f8c;
   border-radius: var(--radius-sm);
   color: #c9eaff;
   background: linear-gradient(180deg, #0a385d, #072943);
-  font-size: 11px;
+  font-size: clamp(8px, min(1.5cqh, 1.1cqi), 11px);
   box-shadow: inset 0 0 8px rgb(42 176 255 / 8%);
 }
 
 .directionPad button svg,
 .axisControls button svg {
+  width: clamp(10px, 2.3cqh, 17px);
+  height: clamp(10px, 2.3cqh, 17px);
+  flex: 0 0 auto;
   color: #4fc9ff;
 }
 
@@ -71,7 +75,7 @@
 .axisControls {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
+  gap: clamp(3px, 0.7cqi, 8px);
   height: 100%;
 }
 
@@ -79,7 +83,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: var(--space-2);
+  gap: clamp(3px, 0.7cqi, 8px);
 }
 
 .commandGroup button {
@@ -97,14 +101,18 @@
 }
 
 .commandGroup button > span {
-  font-size: 12px;
+  font-size: clamp(8px, min(1.65cqh, 1.15cqi), 12px);
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .commandGroup button small {
-  margin-top: 2px;
-  font-size: 9px;
+  margin-top: clamp(0px, 0.3cqh, 2px);
+  font-size: clamp(7px, min(1.25cqh, 0.9cqi), 9px);
+  line-height: 1.1;
   font-weight: 400;
   opacity: 0.72;
+  white-space: nowrap;
 }
 
 .armButton {
@@ -135,7 +143,7 @@
 .commandGroup .rtlButton {
   grid-column: 1 / -1;
   flex-direction: row;
-  gap: 6px;
+  gap: clamp(3px, 0.7cqi, 8px);
   border-color: #b9852e;
   color: #ffd37d;
   background: rgb(130 82 9 / 22%);
@@ -143,6 +151,12 @@
 
 .rtlButton small {
   margin: 0 !important;
+}
+
+.rtlButton svg {
+  width: clamp(10px, 2.1cqh, 16px);
+  height: clamp(10px, 2.1cqh, 16px);
+  flex: 0 0 auto;
 }
 
 .surface button {
@@ -181,19 +195,4 @@
   border-color: #987329;
   color: #ffd987;
   background: rgb(84 59 13 / 92%);
-}
-
-@media (max-height: 900px) {
-  .surface { gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
-  .directionGroup,
-  .axisGroup,
-  .commandGroup { padding: 18px 6px 5px; }
-  .groupLabel { top: 3px; left: 7px; font-size: 9px; }
-  .directionPad,
-  .axisControls,
-  .commandGroup { gap: var(--space-1); }
-  .directionPad button,
-  .axisControls button { font-size: 10px; }
-  .commandGroup button > span { font-size: 10px; }
-  .commandGroup button small { font-size: 8px; }
 }

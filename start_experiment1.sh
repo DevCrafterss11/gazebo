@@ -16,7 +16,7 @@ if curl -fsS --max-time 1 http://127.0.0.1:5173/ >/dev/null 2>&1 \
     echo "MUVA 仿真已经在运行，直接打开实验一。"
 else
     mkdir -p "$(dirname "${startup_log}")"
-    echo "正在启动 Gazebo、ArduPilot SITL、MAVLink 网关和教学前端..."
+    echo "正在启动 MAVLink 网关和教学平台；Gazebo 与飞控控制台将在实验步骤4启动..."
     nohup setsid "${launcher}" </dev/null >>"${startup_log}" 2>&1 &
     launcher_pid=$!
     echo "启动器 PID：${launcher_pid}"

@@ -19,7 +19,6 @@ const read = (): SwarmRun | null => {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || !parsed || !('id' in parsed) || !('config' in parsed) || !('step' in parsed)) return null;
     const run = parsed as SwarmRun;
-    if (run.snapshot && !run.result) delete run.snapshot.interrupted;
     return run;
   } catch { return null; }
 };
@@ -50,6 +49,7 @@ interface SwarmState {
   focusRevision: number;
 
   newRun: () => void | Promise<void>;
+  abortRuntimeAndNewRun: () => Promise<void>;
   restoreDraft: (runId: string) => void;
   resume: () => void;
   updateConfig: (patch: Partial<SwarmConfig>) => void;
@@ -139,26 +139,39 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
   },
   newRun: () => {
     if (get().busy) return;
-    const previous = get().run;
-    if (runtime.mode === 'mock' && previous?.snapshot?.drones.some(drone => drone.armed)) { set({ error: '机群仍在运行，请先返航并确认全部降落后重新开始' }); return; }
     const run: SwarmRun = { id: `swarm-${crypto.randomUUID()}`, createdAt: new Date().toISOString(), config: { ...defaults }, area: null, missions: [], confirmed: false, checks: [], snapshot: null, step: 1, result: null, planning: { noFlyZones: [], savedAt: null } };
-    const commit = () => {
-      let savedDrafts: SwarmRun[];
-      try {
-        savedDrafts = archiveDraft(get().run, get().savedDrafts);
-        localStorage.setItem(key, JSON.stringify(run));
-      } catch { set({ error: '本地存储不可用，无法安全保留原进度；未开始新实验', busy: false }); return; }
-      unsubscribe?.(); unsubscribe = null; runtime.dispose(); ending = false;
-      set({ run, savedDrafts, error: null, busy: false, _runtimeInitialized: false, selectedDroneId: undefined });
-    };
-    const sessionId = runtime.mode === 'sitl' ? previous?.snapshot?.runtime?.sessionId : null;
-    if (!sessionId) { commit(); return; }
+    let savedDrafts: SwarmRun[];
+    try {
+      savedDrafts = archiveDraft(get().run, get().savedDrafts);
+      localStorage.setItem(key, JSON.stringify(run));
+    } catch { set({ error: '本地存储不可用，无法安全保留原进度；未开始新实验', busy: false }); return; }
+    unsubscribe?.(); unsubscribe = null; runtime.dispose(); ending = false;
+    set({ run, savedDrafts, error: null, busy: false, _runtimeInitialized: false, selectedDroneId: undefined });
+  },
+  abortRuntimeAndNewRun: async () => {
+    if (get().busy) return;
     set({ busy: true, error: null });
-    return Promise.resolve(runtime.shutdown(sessionId)).then(() => {
-      if (get().run?.id === previous?.id) commit();
-    }).catch((error: unknown) => {
-      set({ busy: false, error: `无法安全关闭旧机群，已保留当前实验；请确认全部飞控在线、上锁并落地后重试：${error instanceof Error ? error.message : '关闭失败'}` });
-    });
+    try {
+      if (runtime.mode === 'sitl') {
+        if (!runtime.abortSimulation) throw new Error('当前仿真服务不支持显式回收');
+        await runtime.abortSimulation(get().run?.snapshot?.runtime?.sessionId ?? undefined);
+      } else {
+        await runtime.shutdown();
+      }
+      const current = get().run;
+      if (current?.snapshot) {
+        const interrupted: SwarmRun = { ...current, snapshot: { ...current.snapshot, status: 'ABORTED', interrupted: true,
+          runtime: current.snapshot.runtime ? { ...current.snapshot.runtime, sessionId: null, connected: false,
+            error: '仿真已由操作员中止；未确认飞行器安全着陆' } : undefined,
+          events: [...current.snapshot.events, '操作员中止 Gazebo/SITL 仿真；未确认飞行器安全着陆'] } };
+        persist(interrupted);
+        set({ run: interrupted });
+      }
+      set({ busy: false });
+      await get().newRun();
+    } catch (error) {
+      set({ busy: false, error: `中止仿真失败，原实验进度已保留：${error instanceof Error ? error.message : '未知错误'}` });
+    }
   },
   restoreDraft: (runId) => {
     const draft = get().savedDrafts.find((item) => item.id === runId);
@@ -175,6 +188,7 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
   resume: async () => {
     const run = get().run;
     if (!run?.snapshot || run.result) return;
+    if (run.snapshot.interrupted) { set({ error: '此进度的仿真会话已中止，只保留本地规划记录；请新建草稿并重新初始化机群' }); return; }
     try {
       unsubscribe?.(); unsubscribe = null;
       const delivery = run.delivery?.status === 'UPLOADING' ? { ...run.delivery, status: 'CHECKED' as const, receipts: [], uploadedAt: null } : run.delivery;
